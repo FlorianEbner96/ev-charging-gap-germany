@@ -254,6 +254,17 @@ These are decisions made by the author. They are not confirmed by official docum
 4. **Docker.** One Dockerfile for the API, written when the API works.
 5. **Presentation.** 15 minutes, English.
 
+## Extending the prototype (not built)
+
+These are ideas for a larger version. None of them is part of the current code.
+
+- **Experiment tracking and model registry (MLflow).** Not used here on purpose. With three models and a few variants, a results table is enough, and the time budget is small. It would pay off when there are many runs. Every run would log its settings, scores and gap table, and a new model would only replace the current one after it beats it on the same cross validation.
+- **Automated data refresh.** The register is updated regularly and KBA publishes once a year. A scheduled job would download the new files, run the pipeline and stop if a totals check fails.
+- **Scheduled retraining with checks.** Retrain after each new release and compare with the previous model before it goes live.
+- **Monitoring.** New charging points appear every month, so the relationship between cars and charging points changes. Track the typical error and the distribution of the gaps over time.
+- **Better inputs.** Registration place is a weak stand-in for where cars charge. Commuter flows, traffic counts, or the location of each charging point would give a finer unit than the district. The register has coordinates, which are not used yet.
+- **Service.** The API in a container, a build and test step on every change (CI), and the processed table in a database instead of a file.
+
 ## How AI tools were used
 
 Claude Code (Anthropic) was used in this project as a coding assistant. Per step so far:
