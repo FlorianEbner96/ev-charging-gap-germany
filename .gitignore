@@ -221,3 +221,10 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project specific
+data/
+mlflow.db
+mlartifacts/
+CLAUDE.local.md
+CLAUDE.md
