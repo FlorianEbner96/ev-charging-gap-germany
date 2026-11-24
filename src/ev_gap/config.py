@@ -1,10 +1,11 @@
-"""Settings only: paths and source URLs."""
+"""Settings only: paths, source URLs and the district key rules."""
 
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 RAW_DIR = ROOT / "data" / "raw"
 PROCESSED_DIR = ROOT / "data" / "processed"
+DISTRICTS_FILE = PROCESSED_DIR / "districts.csv"
 
 # Bundesnetzagentur: the file name contains the update date, so the URL is looked up
 # on the landing page (see download.find_bnetza_csv_url).
@@ -12,6 +13,7 @@ BNETZA_PAGE = (
     "https://www.bundesnetzagentur.de/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/start.html"
 )
 BNETZA_CSV_PATTERN = r'https://data\.bundesnetzagentur\.de/[^"\']*Ladesaeulenregister_BNetzA_[\d-]+\.csv'
+BNETZA_GLOB = "Ladesaeulenregister_BNetzA_*.csv"
 
 # KBA FZ 1: passenger cars per Zulassungsbezirk by fuel type, stock on 1 January 2026.
 KBA_FZ1_URL = (
@@ -29,3 +31,13 @@ DESTATIS_KREISE_FILE = "destatis_kreise_2024-12-31.xlsx"
 
 # Some servers refuse the default python-requests agent.
 HEADERS = {"User-Agent": "Mozilla/5.0 (ev-gap research project)"}
+
+# District key rules (assumptions A1 and A2 in the README).
+# The register names Hanau as a district. Destatis has no such Kreis.
+REGISTER_NAME_TO_KEY = {"Kreisfreie Stadt Hanau": "06435"}
+# Keys that are merged into another district.
+# Hanau (KBA) -> Main-Kinzig-Kreis. Trier-Saarburg (Destatis) -> Trier, as in the KBA file.
+KEY_MERGES = {"06415": "06435", "07235": "07211"}
+
+# Charging stations with this status are counted. Others (for example "In Wartung") are dropped.
+ACTIVE_STATUS = "In Betrieb"
