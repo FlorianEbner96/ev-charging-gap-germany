@@ -22,6 +22,36 @@ The model describes the current relationship between cars and charging points. I
 | 7. Prototype (map notebook, API) | planned |
 | 8. Presentation | planned |
 
+## Key findings (summary for the presentation)
+
+The details and the numbers behind each point are in the step log below. Steps 6 and 7 (value estimate, prototype) are not done yet, so the last two parts of the list are marked as open.
+
+**1. Problem and relevance.** Electric cars are registered where people live, and charging points are built by many different operators. A district with few charging points compared with its cars is a place where a charging operator, a municipality or a carmaker could look first. The project asks where charging points lag behind what a typical district of the same size has.
+
+**2. Data and method.**
+- Three public sources: the Bundesnetzagentur charging register (214,398 charging points in operation), the KBA car stock per Zulassungsbezirk (2,031,870 battery electric cars) and Destatis area and population per Kreis. Result: one table with 399 districts.
+- The hard part was the join. The register has district names and no keys. A city and its surrounding Landkreis often share a name, and a first match that ignored this made cities such as Passau, Rosenheim and Hof look like the best supplied places in Germany. The pipeline now checks that no car, person or charging point is lost or counted twice.
+- Method: the expected number of charging points per district is estimated with a linear regression on logs (inputs: electric cars, residents, density). Gradient boosting and a simple ratio serve as comparisons. Everything is evaluated with cross validation, so no district is judged by a model that has seen it. The gap is the percentage difference between actual and expected.
+
+**3. Results.**
+- Insight: charging points follow the number of residents about as much as the number of electric cars (elasticity about 0.5 each). So the plain ratio "cars per charging point" is a biased yardstick: it flags large districts partly because they are large (7.4 cars per point in the smallest third of districts, 10.0 in the largest third). This is the reason for modelling the expected number instead.
+- The linear model has a typical error of 21.1% (22.9% when whole federal states are held out). The simple ratio has 26.6% (28.2%). Gradient boosting does not improve on the linear model.
+- Plug-in hybrids: counting them changes neither the error nor the ranking (rank correlation 0.996 or higher). The mix of battery electric and plug-in hybrid cars is similar in all districts.
+- 55 of 399 districts are more than 30% below their expected number of charging points, 24 are more than 40% below. Furthest below: Kusel (-60%), Südwestpfalz (-58%), Germersheim (-54%), Wolfenbüttel (-52%), Altenkirchen (-50%).
+- Federal states differ systematically: districts of Saarland are on average 35% below expected, Rheinland-Pfalz 24% below. Many districts at the top of the list are from these two states. The data does not show why.
+
+**4. Prototype.** Open (step 7).
+
+**5. Business implications, limitations and next steps.**
+- Business use: a ranked list of districts to look at first. A value estimate with marked assumptions is open (step 6).
+- A typical error of about 21% means only large gaps count. A gap of -20% is noise.
+- The model describes the current relationship. It does not show how many charging points are optimal.
+- What the data cannot tell: where cars are really charged (company registrations, commuters, tourism, home charging), and whether plug-in hybrid owners use public charging.
+- Different reference dates: cars 01.01.2026, charging points 12.11.2026, population 31.12.2024.
+- Next steps for a larger version: see "Extending the prototype".
+
+**Where the figures are:** `notebooks/01_explore_data.ipynb` (data quality, section 7 for the two insights), `notebooks/02_model.ipynb` (model comparison, residuals, state pattern, gaps), `notebooks/03_phev_sensitivity.ipynb` (plug-in hybrids).
+
 ## How to run
 
 Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/) and Python 3.13 or newer.
@@ -34,7 +64,7 @@ uv run python -m ev_gap.model     # cross validation of the models, write data/p
 uv run pytest                     # run the tests
 ```
 
-**To run the notebook:** open `notebooks/01_explore_data.ipynb` and select the kernel of the `.venv` in this folder. Sections 1 to 6 need only the downloaded raw files. **Section 7 needs the output of the pipeline, so run the pipeline first** (`uv run python -m ev_gap.pipeline`). Without `data/processed/districts.csv`, section 7 stops with an error that says so.
+**To run the notebook:** open `notebooks/01_explore_data.ipynb` and select the kernel of the `.venv` in this folder. Sections 1 to 6 need only the downloaded raw files. **Section 7 needs the output of the pipeline, so run the pipeline first** (`uv run python -m ev_gap.pipeline`). Without `data/processed/districts.csv`, section 7 stops with an error that says so. The notebooks `02_model.ipynb` and `03_phev_sensitivity.ipynb` also need the pipeline output.
 
 Running the download again is safe. Files that are already in `data/raw/` are skipped. Raw and processed data are not committed.
 
@@ -275,6 +305,8 @@ These are decisions made by the author. They are not confirmed by official docum
 | A3 | A charging point counts the same, whether it is a normal or a fast charger. | target definition |
 | A4 | Cars are counted by the place of registration. This is taken as the place where the cars are used and charged. | all results |
 | A5 | Stations with status "In Wartung" (29 stations, 55 points) are not counted. All other stations in the register have status "In Betrieb". | `clean_register` |
+| A6 | Battery electric cars are the main input. Plug-in hybrids were tested as an alternative and change nothing (step 5b). | model inputs |
+| A7 | The gap is reported in percent of the expected number, not in charging points. The number of missing points is also stored, for the value estimate. | gaps |
 
 ### Limitations known so far
 
@@ -283,6 +315,12 @@ These are decisions made by the author. They are not confirmed by official docum
 - The register lists only points whose notification process is complete, so it undercounts. This is stated by the Bundesnetzagentur.
 - Reference dates differ between the three sources.
 - Home and workplace charging is not in the data. Only public points are counted.
+- The typical model error is about 21%. Gaps of a few tens of percent are within noise.
+- The model does not know the federal state. State wide patterns (Saarland, Rheinland-Pfalz below, Hamburg, Berlin, Mecklenburg-Vorpommern above) are part of the gaps. Their causes are not in the data.
+- Neighbouring districts are similar. Evaluation by federal state tests this and gives slightly higher errors.
+- The data shows whether districts with more plug-in hybrids have more charging points. It does not show whether plug-in hybrid owners use public charging.
+- Gradient boosting uses small fixed settings and was not tuned.
+- The two insights of step 4b are in-sample and rest on log fits. BEV and population correlate strongly (0.89), so their separate coefficients are not stable.
 
 ## Planned next
 
@@ -311,10 +349,8 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 - Step 3: the first version of the exploration notebook was written by the assistant. A join error (double counting of cities and Landkreise with the same name) was found while running the notebook and fixed. The check that the totals match was added because of it.
 - Step 4: the pipeline modules and the 21 tests were written by the assistant, based on the logic of the notebook. The totals check reproduces the numbers of the notebook (2,031,870 BEV, 9.5 BEV per charging point). The 55 points in maintenance are the difference to the notebook's 214,453 points.
 - Step 4b: the quick checks and the figures of section 7 were written by the assistant after a discussion of which insight to lead with. The assistant first judged the name matching problem to be a data quality example and not the main insight. Two chart problems (a truncated axis on the explained variation chart, a label on a reference line) were found by looking at the rendered figures and fixed.
-
 - Step 4c: at the request of the author, the assistant reviewed every transform step for leakage, found the target-derived column `bev_per_point`, and removed it from the pipeline, the tests, the notebook and this README. The pipeline and notebook results did not change (same totals, same section 7 numbers). The tests now number 23.
 - Step 5: the model code (`model.py`), 8 tests and the notebook `02_model.ipynb` were written by the assistant. The model choice (linear regression on logs as the main model, gradient boosting as the comparison, percent gap) was decided by the author after the assistant listed seven model types with arguments for and against. The assistant checked its own statement that the model fits the whole range: the plot suggested a bias at the small districts, a numeric check showed none, and the text was changed to say so. The state pattern in the residuals was found by the assistant while checking the residuals and is reported as a limitation.
-
 - Step 5b: the code changes, 5 new tests and the notebook `03_phev_sensitivity.ipynb` were written by the assistant, after the author approved a plan that listed the three variants. The assistant planned the check as a function in `src/` plus a short notebook. While reviewing its own notebook it found three errors and fixed them: a sentence that gave the largest difference as 0.5 points when it was 0.8, a table with a repeated column name, and a legend that covered the bars. It also added that the plug-in variants are slightly worse in 8 of 10 splits. An identical mean absolute error of two variants in one table looked suspicious. It was checked and is a coincidence of the fold averages.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.
