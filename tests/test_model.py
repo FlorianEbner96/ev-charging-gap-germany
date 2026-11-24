@@ -5,8 +5,8 @@ from sklearn.model_selection import GroupKFold
 
 from ev_gap import config
 from ev_gap.model import (
-    BASELINE, BOOSTING, LINEAR, RatioBaseline, add_gap, cross_validate, make_models,
-    random_folds, score, state_of,
+    BASELINE, BOOSTING, LINEAR, RatioBaseline, add_gap, compare_feature_sets, cross_validate,
+    make_models, random_folds, score, state_of,
 )
 
 
@@ -19,10 +19,13 @@ def districts() -> pd.DataFrame:
     population = rng.integers(40_000, 600_000, n).astype(float)
     area = rng.integers(100, 3000, n).astype(float)
     points = 0.4 * bev**0.5 * population**0.5 / 30 * np.exp(rng.normal(0, 0.1, n))
+    phev = (bev * rng.uniform(0.3, 0.9, n)).round()
     return pd.DataFrame({
         "key": [f"{i % 6 + 1:02d}{i:03d}" for i in range(n)],
         "name": [f"District {i}" for i in range(n)],
         "bev": bev,
+        "phev": phev,
+        "plugin_cars": bev + phev,
         "population": population,
         "density": population / area,
         "charging_points": points.round().clip(min=1).astype(int),
@@ -32,7 +35,7 @@ def districts() -> pd.DataFrame:
 def test_baseline_learns_its_ratio_from_the_training_districts_only(districts):
     train, test = districts.iloc[:40], districts.iloc[40:]
     baseline = RatioBaseline().fit(train[config.FEATURE_COLUMNS], train[config.TARGET])
-    assert baseline.bev_per_point_ == pytest.approx(train["bev"].sum() / train["charging_points"].sum())
+    assert baseline.cars_per_point_ == pytest.approx(train["bev"].sum() / train["charging_points"].sum())
 
     # changing the test districts must not change the predictions
     changed = test.assign(charging_points=test["charging_points"] * 10)
@@ -81,6 +84,38 @@ def test_gap_is_negative_when_a_district_has_fewer_points_than_expected():
     gap = add_gap(districts, pd.Series([100.0, 100.0]))
     assert gap["gap_pct"].tolist() == [-20.0, 50.0]
     assert gap["missing_points"].tolist() == [20.0, -50.0]
+
+
+def test_baseline_uses_the_chosen_car_column(districts):
+    X, y = districts[["plugin_cars", "bev"]], districts[config.TARGET]
+    plugin = RatioBaseline(car_column="plugin_cars").fit(X, y)
+    assert plugin.cars_per_point_ == pytest.approx(districts["plugin_cars"].sum() / y.sum())
+    assert plugin.predict(X).tolist() == pytest.approx((X["plugin_cars"] / plugin.cars_per_point_).tolist())
+
+
+def test_feature_sets_never_contain_the_target_or_its_parts():
+    forbidden = {config.TARGET, *config.TARGET_PARTS, "bev_per_point"}
+    for name, spec in config.FEATURE_SETS.items():
+        assert not forbidden & set(spec["features"]), name
+        assert spec["car_column"] in spec["features"], name
+
+
+def test_compare_feature_sets_gives_every_district_a_prediction_in_every_set(districts):
+    out_of_fold, per_fold = compare_feature_sets(districts, config.FEATURE_SETS, random_folds())
+    assert set(out_of_fold) == set(config.FEATURE_SETS)
+    for expected in out_of_fold.values():
+        assert expected.notna().all().all()
+        assert set(expected.columns) == {BASELINE, LINEAR}
+    assert set(per_fold["feature_set"]) == set(config.FEATURE_SETS)
+    assert len(per_fold) == 3 * 2 * 5  # 3 sets, 2 models, 5 folds
+
+
+def test_the_baseline_is_the_same_when_only_extra_inputs_change(districts):
+    """Sets 'BEV only' and 'BEV and PHEV separate' use the same car column, so the same baseline."""
+    sets = {name: config.FEATURE_SETS[name] for name in ("BEV only", "BEV and PHEV separate")}
+    out_of_fold, _ = compare_feature_sets(districts, sets, random_folds())
+    first, second = out_of_fold.values()
+    assert first[BASELINE].tolist() == pytest.approx(second[BASELINE].tolist())
 
 
 def test_score_is_zero_for_a_perfect_prediction():

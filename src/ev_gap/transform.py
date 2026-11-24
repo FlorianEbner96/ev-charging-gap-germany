@@ -60,6 +60,7 @@ def build_districts(register: pd.DataFrame, kba: pd.DataFrame, destatis: pd.Data
     point_columns = ["points_normal", "points_fast", "charging_points"]
     districts[point_columns] = districts[point_columns].fillna(0).astype(int)
     districts["density"] = districts["population"] / districts["area_km2"]
+    districts["plugin_cars"] = districts["bev"] + districts["phev"]  # battery electric plus plug-in hybrids
     # No column is derived from charging_points here (for example cars per point), because
     # charging_points is the target of the model. Such columns would leak the target.
 

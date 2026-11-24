@@ -29,18 +29,22 @@ GAPS_FILE = config.PROCESSED_DIR / "gaps.csv"
 
 
 class RatioBaseline(RegressorMixin, BaseEstimator):
-    """Expected points = BEV / (BEV per charging point of the training districts).
+    """Expected points = cars / (cars per charging point of the training districts).
 
     The ratio is a number learned from the data. It is computed in fit(), from the training
     districts only, so a test district never influences its own expected value.
+    `car_column` says which car count is used, normally "bev".
     """
 
+    def __init__(self, car_column: str = "bev"):
+        self.car_column = car_column
+
     def fit(self, X: pd.DataFrame, y: pd.Series):
-        self.bev_per_point_ = X["bev"].sum() / y.sum()
+        self.cars_per_point_ = X[self.car_column].sum() / y.sum()
         return self
 
     def predict(self, X: pd.DataFrame) -> np.ndarray:
-        return X["bev"].to_numpy() / self.bev_per_point_
+        return X[self.car_column].to_numpy() / self.cars_per_point_
 
 
 def log_target(regressor) -> TransformedTargetRegressor:
@@ -48,9 +52,9 @@ def log_target(regressor) -> TransformedTargetRegressor:
     return TransformedTargetRegressor(regressor=regressor, func=np.log, inverse_func=np.exp)
 
 
-def make_models(seed: int = 0) -> dict:
+def make_models(seed: int = 0, car_column: str = "bev") -> dict:
     return {
-        BASELINE: RatioBaseline(),
+        BASELINE: RatioBaseline(car_column=car_column),
         LINEAR: log_target(make_pipeline(FunctionTransformer(np.log), LinearRegression())),
         BOOSTING: log_target(
             GradientBoostingRegressor(
@@ -75,14 +79,16 @@ def state_of(districts: pd.DataFrame) -> pd.Series:
     return districts["key"].str[:2]
 
 
-def cross_validate(districts: pd.DataFrame, models: dict, splitter, groups=None):
+def cross_validate(districts: pd.DataFrame, models: dict, splitter, groups=None, features=None):
     """Fit every model on the training districts of each fold and predict the held-out districts.
+
+    `features` are the input columns (default: config.FEATURE_COLUMNS).
 
     Returns (out_of_fold, per_fold):
     - out_of_fold: one expected value per district and model, from a model that did not see it
     - per_fold: the error scores of every model in every fold
     """
-    X, y = districts[config.FEATURE_COLUMNS], districts[config.TARGET]
+    X, y = districts[features or config.FEATURE_COLUMNS], districts[config.TARGET]
     out_of_fold = pd.DataFrame(np.nan, index=districts.index, columns=list(models))
     rows = []
     for fold, (train, test) in enumerate(splitter.split(X, y, groups)):
@@ -92,6 +98,23 @@ def cross_validate(districts: pd.DataFrame, models: dict, splitter, groups=None)
             out_of_fold.iloc[test, out_of_fold.columns.get_loc(name)] = expected
             rows.append({"model": name, "fold": fold, **score(y.iloc[test], expected)})
     return out_of_fold, pd.DataFrame(rows)
+
+
+def compare_feature_sets(districts: pd.DataFrame, feature_sets: dict, splitter, groups=None):
+    """Sensitivity check: the baseline and the linear model on logs, for each set of input columns.
+
+    Returns (out_of_fold, per_fold):
+    - out_of_fold: {set name: table of out of fold expected values for the two models}
+    - per_fold: error scores of every model and set in every fold
+    """
+    out_of_fold, scores = {}, []
+    for set_name, spec in feature_sets.items():
+        models = make_models(car_column=spec["car_column"])
+        models = {name: models[name] for name in (BASELINE, LINEAR)}
+        expected, per_fold = cross_validate(districts, models, splitter, groups, features=spec["features"])
+        out_of_fold[set_name] = expected
+        scores.append(per_fold.assign(feature_set=set_name))
+    return out_of_fold, pd.concat(scores, ignore_index=True)
 
 
 def summarise(per_fold: pd.DataFrame) -> pd.DataFrame:

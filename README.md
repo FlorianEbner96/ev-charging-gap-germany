@@ -17,7 +17,7 @@ The model describes the current relationship between cars and charging points. I
 | 4b. Preliminary insights in the notebook | done |
 | 4c. Leakage review of the pipeline | done |
 | 5. Baseline and model | done |
-| 5b. Plug-in hybrid sensitivity check | next |
+| 5b. Plug-in hybrid sensitivity check | done |
 | 6. Ranking and value estimate | planned |
 | 7. Prototype (map notebook, API) | planned |
 | 8. Presentation | planned |
@@ -66,6 +66,7 @@ src/ev_gap/
 notebooks/
   01_explore_data.ipynb   exploration only, not part of the pipeline
   02_model.ipynb          model comparison, residuals, gaps (needs the pipeline output)
+  03_phev_sensitivity.ipynb   does counting plug-in hybrids change the result (needs the pipeline output)
 tests/
   conftest.py        small made-up tables, one district per rule
   test_extract.py    layout parsing of the KBA and Destatis sheets
@@ -140,7 +141,7 @@ The pipeline reads the three raw files, cleans them, maps the district keys, joi
 
 **Result.** 399 districts. BEV 2,031,870. Plug-in hybrids are kept in the table (`phev`) for the sensitivity check. Charging points 214,398 (153,286 normal and 61,112 fast). 55 charging points at stations with status "In Wartung" are not counted. 9.5 BEV per charging point nationally, the same value as in the exploration notebook.
 
-The output has 11 columns: `key`, `name`, `pkw_total`, `bev`, `phev`, `area_km2`, `population`, `density`, `points_normal`, `points_fast`, `charging_points`. A district with no charging points gets 0. There is none in the current data. See Step 4c for why cars per charging point is not a column.
+The output has 12 columns: `key`, `name`, `pkw_total`, `bev`, `phev`, `area_km2`, `population`, `density`, `points_normal`, `points_fast`, `charging_points`, `plugin_cars` (BEV plus plug-in hybrids, added in step 5b). A district with no charging points gets 0. There is none in the current data. See Step 4c for why cars per charging point is not a column.
 
 **Tests (23).** The key mapping (city and Landkreis with the same name, Oldenburg, Mühldorf with different spacing, Hanau rule, unknown name, ambiguous names, merges), the sheet parsing, the cleaning rule, point counts per district, the Hanau and Trier merges, a district without points, the density, the totals check, and two leakage tests (no column is built from the target, the model features do not contain the target). One integration test runs the whole pipeline on the real files and is skipped if they are not downloaded.
 
@@ -226,6 +227,43 @@ Goal: estimate how many public charging points a typical district with the same 
 - The model describes the current relationship. It does not show how many charging points are optimal.
 - Whether a below-expected district really lacks charging points depends on things not in the data: company registrations, commuters, tourism, home charging, motorway charging.
 
+### Step 5b: Sensitivity check with plug-in hybrids
+
+**To reproduce this step, run the data pipeline first** (`uv run python -m ev_gap.pipeline`), then open `notebooks/03_phev_sensitivity.ipynb`.
+
+Question: plug-in hybrids (PHEV) can also use public charging points. Does counting them change the model, its error or the list of underserved districts?
+
+**Variants** (linear regression on logs, same cross validation as step 5):
+
+| Variant | Inputs | Car count of the baseline ratio |
+|---|---|---|
+| BEV only (main model) | BEV, population, density | BEV |
+| BEV and PHEV separate | BEV, PHEV, population, density | BEV |
+| Plug-in cars combined | BEV + PHEV as one number, population, density | BEV + PHEV |
+
+The sets are defined in `config.FEATURE_SETS`. A test checks that none of them contains the target or a part of it.
+
+**Results**
+
+| Typical error | Random folds | Folds by state |
+|---|---|---|
+| BEV only | 21.1% | 22.9% |
+| BEV and PHEV separate | 21.7% | 22.2% |
+| Plug-in cars combined | 21.3% | 23.4% |
+
+- The error does not improve. In 10 repeated random splits the typical error is 20.6% (BEV only), 20.7% and 20.8%. The variants with plug-in hybrids are better than BEV only in only 2 of 10 splits each, and worse by 0.1 to 0.2 percentage points on average.
+- The ranking of the districts stays almost the same. The rank correlation of the gaps with the main model is 0.998 (BEV and PHEV separate) and 0.996 (combined). 18 to 20 of the 20 most underserved districts and 52 to 53 of the 55 most underserved districts are the same.
+- The districts whose gap changes most are well supplied ones (Wolfsburg, Stuttgart, Ingolstadt). They stay far above their expected value.
+- The simple baseline ratio improves a little when it counts plug-in cars instead of BEV (26.6% to 25.0% with random folds). Plug-in cars follow the number of residents closely, so this is probably a better stand-in for district size. This was not tested.
+
+**Why nothing changes.** The mix of BEV and PHEV is similar in most districts: plug-in hybrids are 29% to 42% of plug-in cars in 80% of the districts (median 35%). The two counts correlate at 0.96 (logs), so they carry almost the same information. In the variant with both, the PHEV coefficient is small and negative (-0.11). Because of the strong correlation this must not be read as "plug-in hybrids reduce charging points".
+
+**Conclusion.** The main result does not depend on whether plug-in hybrids are counted. BEV stays the main input.
+
+**Limit.** The check shows that districts with more plug-in hybrids have about as many charging points as their BEV counts suggest. It does not show whether plug-in hybrid owners use public charging. Home and workplace charging is not in the data.
+
+**Code changes.** The pipeline table has a new column `plugin_cars` (BEV plus PHEV). `RatioBaseline` takes the car column as a parameter. `compare_feature_sets` in `model.py` runs the baseline and the linear model for each input set. 5 new tests (36 in total).
+
 ### Assumptions
 
 These are decisions made by the author. They are not confirmed by official documentation.
@@ -248,11 +286,10 @@ These are decisions made by the author. They are not confirmed by official docum
 
 ## Planned next
 
-1. **Sensitivity check with plug-in hybrids.** Add the plug-in hybrid count (`phev`, already loaded in the notebook) as a second feature or as a combined plug-in car count. Check whether the district ranking changes. BEV stays the main driver, because plug-in hybrids are often charged at home or at work. This is an assumption to test.
-2. **Ranking and value estimate.** List of districts with the largest gap, as a percentage. Every value assumption is marked as an assumption. Because the typical model error is about 21%, only large gaps count.
-3. **Prototype.** Notebook with a map (also saved as a standalone HTML file), and a small API that returns the gap for one district. A short screen recording of the demo as a backup for the presentation.
-4. **Docker.** One Dockerfile for the API, written when the API works.
-5. **Presentation.** 15 minutes, English.
+1. **Ranking and value estimate.** List of districts with the largest gap, as a percentage. Every value assumption is marked as an assumption. Because the typical model error is about 21%, only large gaps count.
+2. **Prototype.** Notebook with a map (also saved as a standalone HTML file), and a small API that returns the gap for one district. A short screen recording of the demo as a backup for the presentation.
+3. **Docker.** One Dockerfile for the API, written when the API works.
+4. **Presentation.** 15 minutes, English.
 
 ## Extending the prototype (not built)
 
@@ -277,5 +314,7 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 
 - Step 4c: at the request of the author, the assistant reviewed every transform step for leakage, found the target-derived column `bev_per_point`, and removed it from the pipeline, the tests, the notebook and this README. The pipeline and notebook results did not change (same totals, same section 7 numbers). The tests now number 23.
 - Step 5: the model code (`model.py`), 8 tests and the notebook `02_model.ipynb` were written by the assistant. The model choice (linear regression on logs as the main model, gradient boosting as the comparison, percent gap) was decided by the author after the assistant listed seven model types with arguments for and against. The assistant checked its own statement that the model fits the whole range: the plot suggested a bias at the small districts, a numeric check showed none, and the text was changed to say so. The state pattern in the residuals was found by the assistant while checking the residuals and is reported as a limitation.
+
+- Step 5b: the code changes, 5 new tests and the notebook `03_phev_sensitivity.ipynb` were written by the assistant, after the author approved a plan that listed the three variants. The assistant planned the check as a function in `src/` plus a short notebook. While reviewing its own notebook it found three errors and fixed them: a sentence that gave the largest difference as 0.5 points when it was 0.8, a table with a repeated column name, and a legend that covered the bars. It also added that the plug-in variants are slightly worse in 8 of 10 splits. An identical mean absolute error of two variants in one table looked suspicious. It was checked and is a coincidence of the fold averages.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.

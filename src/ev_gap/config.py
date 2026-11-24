@@ -45,5 +45,12 @@ FEATURE_COLUMNS = ["bev", "population", "density"]
 # Parts of the target. They stay in the table for analysis, but are never model input.
 TARGET_PARTS = ["points_normal", "points_fast"]
 
+# Sensitivity check with plug-in hybrids. "car_column" is the car count used by the baseline ratio.
+FEATURE_SETS = {
+    "BEV only": {"features": FEATURE_COLUMNS, "car_column": "bev"},
+    "BEV and PHEV separate": {"features": ["bev", "phev", "population", "density"], "car_column": "bev"},
+    "Plug-in cars combined": {"features": ["plugin_cars", "population", "density"], "car_column": "plugin_cars"},
+}
+
 # Charging stations with this status are counted. Others (for example "In Wartung") are dropped.
 ACTIVE_STATUS = "In Betrieb"

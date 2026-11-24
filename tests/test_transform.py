@@ -69,6 +69,11 @@ def test_density_is_population_per_square_kilometre(register, kba, destatis):
     assert flensburg["density"] == pytest.approx(100_000 / 50.0)
 
 
+def test_plugin_cars_is_bev_plus_plugin_hybrids(register, kba, destatis):
+    districts = build_districts(register, kba, destatis)
+    assert (districts["plugin_cars"] == districts["bev"] + districts["phev"]).all()
+
+
 def test_no_column_is_built_from_the_target(register, kba, destatis):
     """Cars per point and similar columns would contain the target. They must not be in the table."""
     districts = build_districts(register, kba, destatis)
