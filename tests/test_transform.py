@@ -1,5 +1,6 @@
 import pytest
 
+from ev_gap import config
 from ev_gap.transform import build_districts, check_totals, clean_register, count_points
 
 
@@ -52,11 +53,9 @@ def test_stations_in_maintenance_are_not_counted(register, kba, destatis):
     assert row(districts, "09183")["charging_points"] == 2
 
 
-def test_district_without_charging_points_has_zero_and_no_ratio(register, kba, destatis):
+def test_district_without_charging_points_has_zero(register, kba, destatis):
     districts = build_districts(register[register["kreis_name"] != "Landkreis Passau"], kba, destatis)
-    passau = row(districts, "09263")
-    assert passau["charging_points"] == 0
-    assert passau["bev_per_point"] != passau["bev_per_point"]  # NaN, not infinity
+    assert row(districts, "09263")["charging_points"] == 0
 
 
 def test_build_districts_has_one_row_per_merged_district(register, kba, destatis):
@@ -65,10 +64,23 @@ def test_build_districts_has_one_row_per_merged_district(register, kba, destatis
     assert districts["key"].is_unique
 
 
-def test_derived_columns(register, kba, destatis):
+def test_density_is_population_per_square_kilometre(register, kba, destatis):
     flensburg = row(build_districts(register, kba, destatis), "01001")
     assert flensburg["density"] == pytest.approx(100_000 / 50.0)
-    assert flensburg["bev_per_point"] == pytest.approx(flensburg["bev"] / 6)
+
+
+def test_no_column_is_built_from_the_target(register, kba, destatis):
+    """Cars per point and similar columns would contain the target. They must not be in the table."""
+    districts = build_districts(register, kba, destatis)
+    assert "bev_per_point" not in districts.columns
+
+
+def test_model_features_exist_and_do_not_contain_the_target(register, kba, destatis):
+    districts = build_districts(register, kba, destatis)
+    assert set(config.FEATURE_COLUMNS) <= set(districts.columns)
+    assert config.TARGET in districts.columns
+    assert config.TARGET not in config.FEATURE_COLUMNS
+    assert not set(config.TARGET_PARTS) & set(config.FEATURE_COLUMNS)
 
 
 def test_check_totals_catches_lost_charging_points(register, kba, destatis):

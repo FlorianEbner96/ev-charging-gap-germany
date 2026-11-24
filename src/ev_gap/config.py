@@ -39,5 +39,11 @@ REGISTER_NAME_TO_KEY = {"Kreisfreie Stadt Hanau": "06435"}
 # Hanau (KBA) -> Main-Kinzig-Kreis. Trier-Saarburg (Destatis) -> Trier, as in the KBA file.
 KEY_MERGES = {"06415": "06435", "07235": "07211"}
 
+# Model columns. The target is what the model predicts.
+TARGET = "charging_points"
+FEATURE_COLUMNS = ["bev", "population", "density"]
+# Parts of the target. They stay in the table for analysis, but are never model input.
+TARGET_PARTS = ["points_normal", "points_fast"]
+
 # Charging stations with this status are counted. Others (for example "In Wartung") are dropped.
 ACTIVE_STATUS = "In Betrieb"

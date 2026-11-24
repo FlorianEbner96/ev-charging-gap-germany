@@ -15,6 +15,7 @@ The model describes the current relationship between cars and charging points. I
 | 3. Exploration notebook | done |
 | 4. Cleaning pipeline with tests | done |
 | 4b. Preliminary insights in the notebook | done |
+| 4c. Leakage review of the pipeline | done |
 | 5. Baseline and model | next |
 | 6. Ranking and value estimate | planned |
 | 7. Prototype (map notebook, API) | planned |
@@ -130,13 +131,13 @@ The pipeline reads the three raw files, cleans them, maps the district keys, joi
 **What each stage does**
 - `extract.py`: handles the file quirks only. Header lines, encoding, decimal comma, Excel header rows, subtotal rows. The KBA reader raises an error if the district rows do not add up to the national total in the file.
 - `keys.py`: type-aware name match (city or rural district, plus normalised name). Raises an error for any register name without a key and if the official names are ambiguous. The manual rule for Hanau and the merge rules for Hanau and Trier-Saarburg are in `config.py`.
-- `transform.py`: keeps stations that are in operation, counts charging points per district (normal and fast separately), sums cars, population and area where districts are merged, and adds density and BEV per charging point. `check_totals` stops the pipeline if the join changed the total of BEV, plug-in hybrids, population or charging points.
+- `transform.py`: keeps stations that are in operation, counts charging points per district (normal and fast separately), sums cars, population and area where districts are merged, and adds the density. `check_totals` stops the pipeline if the join changed the total of BEV, plug-in hybrids, population or charging points.
 
 **Result.** 399 districts. BEV 2,031,870. Plug-in hybrids are kept in the table (`phev`) for the sensitivity check. Charging points 214,398 (153,286 normal and 61,112 fast). 55 charging points at stations with status "In Wartung" are not counted. 9.5 BEV per charging point nationally, the same value as in the exploration notebook.
 
-The output has 12 columns: `key`, `name`, `pkw_total`, `bev`, `phev`, `area_km2`, `population`, `density`, `points_normal`, `points_fast`, `charging_points`, `bev_per_point`. A district with no charging points would get an empty `bev_per_point` instead of infinity. There is none in the current data.
+The output has 11 columns: `key`, `name`, `pkw_total`, `bev`, `phev`, `area_km2`, `population`, `density`, `points_normal`, `points_fast`, `charging_points`. A district with no charging points gets 0. There is none in the current data. See Step 4c for why cars per charging point is not a column.
 
-**Tests (21).** The key mapping (city and Landkreis with the same name, Oldenburg, Mühldorf with different spacing, Hanau rule, unknown name, ambiguous names, merges), the sheet parsing, the cleaning rule, point counts per district, the Hanau and Trier merges, a district without points, derived columns, and the totals check. One integration test runs the whole pipeline on the real files and is skipped if they are not downloaded.
+**Tests (23).** The key mapping (city and Landkreis with the same name, Oldenburg, Mühldorf with different spacing, Hanau rule, unknown name, ambiguous names, merges), the sheet parsing, the cleaning rule, point counts per district, the Hanau and Trier merges, a district without points, the density, the totals check, and two leakage tests (no column is built from the target, the model features do not contain the target). One integration test runs the whole pipeline on the real files and is skipped if they are not downloaded.
 
 ### Step 4b: Two preliminary insights (notebook section 7)
 
@@ -165,6 +166,21 @@ Caveats:
 
 **Data quality example from the join.** A first name match that ignored the type (city or rural district) counted charging points twice for pairs such as Passau, Rosenheim and Hof. These cities then looked like the best supplied districts in Germany, with 1 to 3 BEV per point. The totals check in the pipeline now catches this kind of error. The number of such name pairs has not been counted yet.
 
+### Step 4c: Leakage review of the transform steps
+
+Question: can any step of the pipeline give the model information it should not have, so that the results look better than they are? This is called data leakage.
+
+**Result of the review.** No transform step learns a number from the data (no mean, no scaling, no fill value). Each district row depends only on its own source rows and on fixed rules in `config.py`. So none of the steps has to move behind the train and test split.
+
+**One problem found and fixed.** The table had a column `bev_per_point` (cars divided by charging points). Charging points are the target of the model, so this column contains the answer. If it were used as an input, the model would get the target for free. The column was removed from the pipeline. It is now computed only where it is needed for analysis (notebook section 7, and later the baseline). The columns `points_normal` and `points_fast` are parts of the target. They stay in the table for analysis, but they are never model input.
+
+**Guard in the code.** `config.py` lists the model target (`charging_points`), the allowed input columns (`bev`, `population`, `density`) and the parts of the target. Two tests check that the table has no column built from the target and that the inputs do not contain the target.
+
+**Rules for the model step.**
+- Anything that learns a number from the data is fitted on the training districts only. This includes the national ratio of the baseline, any scaling and the choice of hyperparameters.
+- The evaluation numbers come from cross validation. The in-sample numbers of section 7 are not performance numbers.
+- Neighbouring districts are similar, so a random split may be a little optimistic. A split by federal state can test this. Not tested yet.
+
 ### Assumptions
 
 These are decisions made by the author. They are not confirmed by official documentation.
@@ -187,7 +203,7 @@ These are decisions made by the author. They are not confirmed by official docum
 
 ## Planned next
 
-1. **Baseline.** BEV per charging point per district.
+1. **Baseline.** BEV per charging point per district. The national ratio is a number learned from the data, so in cross validation it is computed from the training districts of each fold only.
 2. **Model.** Linear regression of charging points on BEV, population and density, with k-fold cross validation and a comparison to the baseline. Residual analysis. Gap = actual minus expected.
 3. **Sensitivity check with plug-in hybrids.** Add the plug-in hybrid count (`phev`, already loaded in the notebook) as a second feature or as a combined plug-in car count. Check whether the district ranking changes. BEV stays the main driver, because plug-in hybrids are often charged at home or at work. This is an assumption to test.
 4. **Ranking and value estimate.** List of districts with the largest gap. Every value assumption is marked as an assumption.
@@ -204,5 +220,7 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 - Step 3: the first version of the exploration notebook was written by the assistant. A join error (double counting of cities and Landkreise with the same name) was found while running the notebook and fixed. The check that the totals match was added because of it.
 - Step 4: the pipeline modules and the 21 tests were written by the assistant, based on the logic of the notebook. The totals check reproduces the numbers of the notebook (2,031,870 BEV, 9.5 BEV per charging point). The 55 points in maintenance are the difference to the notebook's 214,453 points.
 - Step 4b: the quick checks and the figures of section 7 were written by the assistant after a discussion of which insight to lead with. The assistant first judged the name matching problem to be a data quality example and not the main insight. Two chart problems (a truncated axis on the explained variation chart, a label on a reference line) were found by looking at the rendered figures and fixed.
+
+- Step 4c: at the request of the author, the assistant reviewed every transform step for leakage, found the target-derived column `bev_per_point`, and removed it from the pipeline, the tests, the notebook and this README. The pipeline and notebook results did not change (same totals, same section 7 numbers). The tests now number 23.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.

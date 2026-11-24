@@ -60,7 +60,8 @@ def build_districts(register: pd.DataFrame, kba: pd.DataFrame, destatis: pd.Data
     point_columns = ["points_normal", "points_fast", "charging_points"]
     districts[point_columns] = districts[point_columns].fillna(0).astype(int)
     districts["density"] = districts["population"] / districts["area_km2"]
-    districts["bev_per_point"] = districts["bev"] / districts["charging_points"].where(districts["charging_points"] > 0)
+    # No column is derived from charging_points here (for example cars per point), because
+    # charging_points is the target of the model. Such columns would leak the target.
 
     check_totals(districts, active, kba, destatis)
     return districts.sort_values("key").reset_index(drop=True)
