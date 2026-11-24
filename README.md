@@ -31,7 +31,7 @@ uv run python -m ev_gap.pipeline  # clean, join, write data/processed/districts.
 uv run pytest                     # run the tests
 ```
 
-The exploration notebook can be opened without the pipeline. Open `notebooks/01_explore_data.ipynb` and select the kernel of the `.venv` in this folder.
+**To run the notebook:** open `notebooks/01_explore_data.ipynb` and select the kernel of the `.venv` in this folder. Sections 1 to 6 need only the downloaded raw files. **Section 7 needs the output of the pipeline, so run the pipeline first** (`uv run python -m ev_gap.pipeline`). Without `data/processed/districts.csv`, section 7 stops with an error that says so.
 
 Running the download again is safe. Files that are already in `data/raw/` are skipped. Raw and processed data are not committed.
 
@@ -142,7 +142,7 @@ The output has 12 columns: `key`, `name`, `pkw_total`, `bev`, `phev`, `area_km2`
 
 Goal: find at least one insight about charging infrastructure that the data supports, and that explains why a model is needed.
 
-The section reads the processed table from the pipeline (399 districts, 214,398 charging points) and fits straight lines on log values. It is an in-sample first look. The model step repeats it with cross validation.
+**To reproduce this step, run the data pipeline first** (`uv run python -m ev_gap.pipeline`). The section reads the processed table from the pipeline (399 districts, 214,398 charging points) and fits straight lines on log values. It is an in-sample first look. The model step repeats it with cross validation.
 
 **Insight 1: charging points follow residents about as much as electric cars.**
 
