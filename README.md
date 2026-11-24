@@ -16,7 +16,8 @@ The model describes the current relationship between cars and charging points. I
 | 4. Cleaning pipeline with tests | done |
 | 4b. Preliminary insights in the notebook | done |
 | 4c. Leakage review of the pipeline | done |
-| 5. Baseline and model | next |
+| 5. Baseline and model | done |
+| 5b. Plug-in hybrid sensitivity check | next |
 | 6. Ranking and value estimate | planned |
 | 7. Prototype (map notebook, API) | planned |
 | 8. Presentation | planned |
@@ -29,6 +30,7 @@ Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/) and 
 uv sync                           # create .venv and install packages
 uv run python -m ev_gap.download  # download the three raw files into data/raw/
 uv run python -m ev_gap.pipeline  # clean, join, write data/processed/districts.csv
+uv run python -m ev_gap.model     # cross validation of the models, write data/processed/gaps.csv
 uv run pytest                     # run the tests
 ```
 
@@ -60,14 +62,17 @@ src/ev_gap/
   keys.py            map register district names to official district keys
   transform.py       clean the register, join the three sources, check the totals
   pipeline.py        run extract, transform and write data/processed/districts.csv
+  model.py           baseline, linear model on logs, gradient boosting, cross validation, gaps
 notebooks/
   01_explore_data.ipynb   exploration only, not part of the pipeline
+  02_model.ipynb          model comparison, residuals, gaps (needs the pipeline output)
 tests/
   conftest.py        small made-up tables, one district per rule
   test_extract.py    layout parsing of the KBA and Destatis sheets
   test_keys.py       district key mapping
   test_transform.py  cleaning, key merges, join, totals check
   test_pipeline_integration.py   end to end on the real files (skipped if not downloaded)
+  test_model.py      baseline learns from training districts only, no leakage of a district's own value, folds, gap
 ```
 
 ## Step log
@@ -181,6 +186,46 @@ Question: can any step of the pipeline give the model information it should not 
 - The evaluation numbers come from cross validation. The in-sample numbers of section 7 are not performance numbers.
 - Neighbouring districts are similar, so a random split may be a little optimistic. A split by federal state can test this. Not tested yet.
 
+### Step 5: Baseline and model
+
+**To reproduce this step, run the data pipeline first** (`uv run python -m ev_gap.pipeline`), then `uv run python -m ev_gap.model` or open `notebooks/02_model.ipynb`.
+
+Goal: estimate how many public charging points a typical district with the same cars, residents and density has (the expected number), and report the gap of each district in percent: (actual minus expected) divided by expected.
+
+**Models** (chosen by the author after a comparison of seven model types)
+
+| Model | Role |
+|---|---|
+| Baseline ratio | Expected points = BEV divided by the BEV per charging point of the training districts |
+| Linear regression on logs | Main model. Inputs: BEV, population, density. Works in percentages |
+| Gradient boosting | Comparison model. Looks for curves and interactions. Small and fixed settings (200 shallow trees), not tuned |
+
+**Evaluation.** 5-fold cross validation. Every district is predicted by a model that was trained without it, and the baseline ratio is also computed from the training districts only. A test checks that a district's own charging point count does not change its own expected value. A second evaluation holds out whole federal states, because neighbouring districts are similar.
+
+**Results** (typical error = median of |expected minus actual| divided by actual)
+
+| Model | Typical error, random folds | Typical error, folds by state |
+|---|---|---|
+| Baseline ratio | 26.6% | 28.2% |
+| Gradient boosting | 22.6% | 23.9% |
+| Linear regression on logs | 21.1% | 22.9% |
+
+- The linear model has the lowest error in both schemes and on all three error measures. It beats the baseline in all 5 folds and in 10 repeated random splits (by 5.0 to 6.9 percentage points).
+- Gradient boosting does not improve on it. The gap between the two (1.7 to 3.2 points in the repeated splits) is small next to the fold to fold spread of 2 to 5 points. The conclusion is "no clear gain from the flexible model".
+- The two models rank the districts alike (rank correlation 0.92, 14 of the 20 most underserved districts are shared). The baseline ranks differently (rank correlation 0.82 with the linear model, 11 of 20 shared).
+- Coefficients of the linear model fitted on all districts (elasticities): BEV 0.48, population 0.45, density 0.07.
+
+**Residuals.** The model is not off in one part of the range: in 5 groups by expected points, the average log residual is between -0.02 and +0.02. The spread is wide. The middle 80% of districts lie between 34% below and 50% above their expected value.
+
+**State pattern.** Federal states differ from what the model expects. On average the districts of Saarland are 35% below the expected value and those of Rheinland-Pfalz 24% below. Hamburg (+43%), Mecklenburg-Vorpommern (+32%) and Berlin (+27%) are above. Hamburg and Berlin are one district each. The data does not show why. The model does not know the state, so these patterns are part of the gaps. Many districts of Rheinland-Pfalz and Saarland are therefore at the top of the underserved list.
+
+**Gaps.** 55 of 399 districts are more than 30% below their expected value and 24 are more than 40% below. The 5 districts furthest below: Kusel (-60%), Südwestpfalz (-58%), Germersheim (-54%), Wolfenbüttel (-52%), Altenkirchen (-50%). Above: Heilbronn (+157%), Oder-Spree (+151%), Ingolstadt (+147%). The gaps are written to `data/processed/gaps.csv` (out of fold expected values and gaps of all three models).
+
+**What this does not show.**
+- A typical error of about 21% is large. A gap of -20% is within normal noise. Only large gaps are worth attention.
+- The model describes the current relationship. It does not show how many charging points are optimal.
+- Whether a below-expected district really lacks charging points depends on things not in the data: company registrations, commuters, tourism, home charging, motorway charging.
+
 ### Assumptions
 
 These are decisions made by the author. They are not confirmed by official documentation.
@@ -203,13 +248,11 @@ These are decisions made by the author. They are not confirmed by official docum
 
 ## Planned next
 
-1. **Baseline.** BEV per charging point per district. The national ratio is a number learned from the data, so in cross validation it is computed from the training districts of each fold only.
-2. **Model.** Linear regression of charging points on BEV, population and density, with k-fold cross validation and a comparison to the baseline. Residual analysis. Gap = actual minus expected.
-3. **Sensitivity check with plug-in hybrids.** Add the plug-in hybrid count (`phev`, already loaded in the notebook) as a second feature or as a combined plug-in car count. Check whether the district ranking changes. BEV stays the main driver, because plug-in hybrids are often charged at home or at work. This is an assumption to test.
-4. **Ranking and value estimate.** List of districts with the largest gap. Every value assumption is marked as an assumption.
-5. **Prototype.** Notebook with a map, and a small API that returns the gap for one district.
-6. **Docker.** One Dockerfile for the API, written when the API works.
-7. **Presentation.** 15 minutes, English.
+1. **Sensitivity check with plug-in hybrids.** Add the plug-in hybrid count (`phev`, already loaded in the notebook) as a second feature or as a combined plug-in car count. Check whether the district ranking changes. BEV stays the main driver, because plug-in hybrids are often charged at home or at work. This is an assumption to test.
+2. **Ranking and value estimate.** List of districts with the largest gap, as a percentage. Every value assumption is marked as an assumption. Because the typical model error is about 21%, only large gaps count.
+3. **Prototype.** Notebook with a map (also saved as a standalone HTML file), and a small API that returns the gap for one district. A short screen recording of the demo as a backup for the presentation.
+4. **Docker.** One Dockerfile for the API, written when the API works.
+5. **Presentation.** 15 minutes, English.
 
 ## How AI tools were used
 
@@ -222,5 +265,6 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 - Step 4b: the quick checks and the figures of section 7 were written by the assistant after a discussion of which insight to lead with. The assistant first judged the name matching problem to be a data quality example and not the main insight. Two chart problems (a truncated axis on the explained variation chart, a label on a reference line) were found by looking at the rendered figures and fixed.
 
 - Step 4c: at the request of the author, the assistant reviewed every transform step for leakage, found the target-derived column `bev_per_point`, and removed it from the pipeline, the tests, the notebook and this README. The pipeline and notebook results did not change (same totals, same section 7 numbers). The tests now number 23.
+- Step 5: the model code (`model.py`), 8 tests and the notebook `02_model.ipynb` were written by the assistant. The model choice (linear regression on logs as the main model, gradient boosting as the comparison, percent gap) was decided by the author after the assistant listed seven model types with arguments for and against. The assistant checked its own statement that the model fits the whole range: the plot suggested a bias at the small districts, a numeric check showed none, and the text was changed to say so. The state pattern in the residuals was found by the assistant while checking the residuals and is reported as a limitation.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.
