@@ -18,13 +18,13 @@ The model describes the current relationship between cars and charging points. I
 | 4c. Leakage review of the pipeline | done |
 | 5. Baseline and model | done |
 | 5b. Plug-in hybrid sensitivity check | done |
-| 6. Ranking and value estimate | planned |
+| 6. Ranking and value estimate | done |
 | 7. Prototype (map notebook, API) | planned |
 | 8. Presentation | planned |
 
 ## Key findings (summary for the presentation)
 
-The details and the numbers behind each point are in the step log below. Steps 6 and 7 (value estimate, prototype) are not done yet, so the last two parts of the list are marked as open.
+The details and the numbers behind each point are in the step log below. Step 7 (the prototype) is not done yet, so part 4 of the list is marked as open.
 
 **1. Problem and relevance.** Electric cars are registered where people live, and charging points are built by many different operators. A district with few charging points compared with its cars is a place where a charging operator, a municipality or a carmaker could look first. The project asks where charging points lag behind what a typical district of the same size has.
 
@@ -37,20 +37,24 @@ The details and the numbers behind each point are in the step log below. Steps 6
 - Insight: charging points follow the number of residents about as much as the number of electric cars (elasticity about 0.5 each). So the plain ratio "cars per charging point" is a biased yardstick: it flags large districts partly because they are large (7.4 cars per point in the smallest third of districts, 10.0 in the largest third). This is the reason for modelling the expected number instead.
 - The linear model has a typical error of 21.1% (22.9% when whole federal states are held out). The simple ratio has 26.6% (28.2%). Gradient boosting does not improve on the linear model.
 - Plug-in hybrids: counting them changes neither the error nor the ranking (rank correlation 0.996 or higher). The mix of battery electric and plug-in hybrid cars is similar in all districts.
-- 55 of 399 districts are more than 30% below their expected number of charging points, 24 are more than 40% below. Furthest below: Kusel (-60%), Südwestpfalz (-58%), Germersheim (-54%), Wolfenbüttel (-52%), Altenkirchen (-50%).
-- Federal states differ systematically: districts of Saarland are on average 35% below expected, Rheinland-Pfalz 24% below. Many districts at the top of the list are from these two states. The data does not show why.
+- 55 of 399 districts are more than 30% below their expected number of charging points ("clearly below"), 24 are more than 40% below. For 42 of the 55, gradient boosting agrees. Furthest below in percent: Kusel (-60%), Südwestpfalz (-58%), Germersheim (-54%), Wolfenbüttel (-52%), Altenkirchen (-50%).
+- Percent and absolute numbers give different lists: only 2 of the top 15 districts by percent are also in the top 15 by missing charging points. By points, München is first (1,817 missing, -37%), then Rhein-Sieg-Kreis, Rhein-Neckar-Kreis, Euskirchen and Rhein-Erft-Kreis.
+- Federal states differ systematically: districts of Saarland are on average 35% below expected, Rheinland-Pfalz 24% below. Rheinland-Pfalz and Saarland are 35% of the 55 districts but 10% of all districts. The data does not show why.
+- Scale: the missing points of the 55 districts are 2,278 to reach 70% of the expected number, and 10,423 to reach the expected number. That is 0.8 and 3.5 months of the 2025 build rate (35,754 points, from the register).
+- Rough value, built from assumptions (A8 to A14): closing the gap to 70% of expected needs about 27 million EUR of investment (range 21 to 54) and brings about 11 million EUR of gross revenue per year (range 4 to 23). Closing it to the expected number needs about 125 million EUR (range 98 to 249) and brings about 51 million EUR per year (range 20 to 104). Revenue is before electricity and operating cost, so it is not profit. This is an order of magnitude, not a business case.
 
 **4. Prototype.** Open (step 7).
 
 **5. Business implications, limitations and next steps.**
-- Business use: a ranked list of districts to look at first. A value estimate with marked assumptions is open (step 6).
+- Business use: a ranked list of districts to look at first, in two views (percent for "who lags behind its peers", missing points for "where to build"). The reader is a charging operator, secondary a municipality. It is a screening tool: it says where to look first, not where to build. The next step would be utilization data from operators.
+- The value estimate (assumptions A8 to A14) gives an order of magnitude for the investment and the gross revenue. The biggest uncertainty is how much new points would be used, which the data cannot tell.
 - A typical error of about 21% means only large gaps count. A gap of -20% is noise.
 - The model describes the current relationship. It does not show how many charging points are optimal.
 - What the data cannot tell: where cars are really charged (company registrations, commuters, tourism, home charging), and whether plug-in hybrid owners use public charging.
 - Different reference dates: cars 01.01.2026, charging points 12.11.2026, population 31.12.2024.
 - Next steps for a larger version: see "Extending the prototype".
 
-**Where the figures are:** `notebooks/01_explore_data.ipynb` (data quality, section 7 for the two insights), `notebooks/02_model.ipynb` (model comparison, residuals, state pattern, gaps), `notebooks/03_phev_sensitivity.ipynb` (plug-in hybrids).
+**Where the figures are:** `notebooks/01_explore_data.ipynb` (data quality, section 7 for the two insights), `notebooks/02_model.ipynb` (model comparison, residuals, state pattern, gaps), `notebooks/03_phev_sensitivity.ipynb` (plug-in hybrids), `notebooks/04_ranking_value.ipynb` (ranked lists, who is on the list, scale, value estimate).
 
 ## How to run
 
@@ -61,6 +65,7 @@ uv sync                           # create .venv and install packages
 uv run python -m ev_gap.download  # download the three raw files into data/raw/
 uv run python -m ev_gap.pipeline  # clean, join, write data/processed/districts.csv
 uv run python -m ev_gap.model     # cross validation of the models, write data/processed/gaps.csv
+uv run python -m ev_gap.ranking   # ranking and value estimate, write ranking.csv and value_scenarios.csv
 uv run pytest                     # run the tests
 ```
 
@@ -93,10 +98,12 @@ src/ev_gap/
   transform.py       clean the register, join the three sources, check the totals
   pipeline.py        run extract, transform and write data/processed/districts.csv
   model.py           baseline, linear model on logs, gradient boosting, cross validation, gaps
+  ranking.py         ranking of the districts and the value estimate
 notebooks/
   01_explore_data.ipynb   exploration only, not part of the pipeline
   02_model.ipynb          model comparison, residuals, gaps (needs the pipeline output)
   03_phev_sensitivity.ipynb   does counting plug-in hybrids change the result (needs the pipeline output)
+  04_ranking_value.ipynb      ranked lists, value estimate (needs the pipeline and model output)
 tests/
   conftest.py        small made-up tables, one district per rule
   test_extract.py    layout parsing of the KBA and Destatis sheets
@@ -104,6 +111,7 @@ tests/
   test_transform.py  cleaning, key merges, join, totals check
   test_pipeline_integration.py   end to end on the real files (skipped if not downloaded)
   test_model.py      baseline learns from training districts only, no leakage of a district's own value, folds, gap
+  test_ranking.py    sort order, threshold, robust flag, missing points, value arithmetic
 ```
 
 ## Step log
@@ -294,6 +302,39 @@ The sets are defined in `config.FEATURE_SETS`. A test checks that none of them c
 
 **Code changes.** The pipeline table has a new column `plugin_cars` (BEV plus PHEV). `RatioBaseline` takes the car column as a parameter. `compare_feature_sets` in `model.py` runs the baseline and the linear model for each input set. 5 new tests (36 in total).
 
+### Step 6: Ranking and value estimate
+
+**To reproduce this step, run the pipeline and the model first** (`uv run python -m ev_gap.pipeline`, then `uv run python -m ev_gap.model`), then `uv run python -m ev_gap.ranking` or open `notebooks/04_ranking_value.ipynb`.
+
+**Ranking.** The gap of the linear model (out of fold) sorts the districts. A district is **clearly below** if it has more than 30% fewer charging points than expected. 30% is chosen to lie above the typical model error of about 21%. It is **robust** if gradient boosting also puts it more than 30% below. Result: 55 of 399 districts are clearly below, 42 of them robust. Together they have 10.4 million residents and 277,593 BEV (13.7% of all BEV).
+
+**Two views, two different lists.** Only 2 of the 15 districts at the top by percent gap are also in the top 15 by missing charging points.
+- By percent: small districts, many in Rheinland-Pfalz and Saarland. Kusel (-60%, 90 missing points), Südwestpfalz (-58%, 122), Germersheim (-54%, 181), Wolfenbüttel (-52%, 160), Altenkirchen (-50%, 162).
+- By missing points: large districts, many in Nordrhein-Westfalen. München is 37% below expected, only rank 30 by percent, but first by missing points (1,817). Then Rhein-Sieg-Kreis (476), Rhein-Neckar-Kreis (405), Euskirchen (363), Rhein-Erft-Kreis (355).
+- The percent view fits a question such as "where does a district lag behind its peers". The points view fits "where would an operator build".
+
+**Who is on the list.** Rheinland-Pfalz and Saarland are 35% of the 55 districts and 10% of all districts. Nordrhein-Westfalen has 13 of the 55 (24%, against 13% of all districts). Bayern has 5 (9%, against 24%). The model does not know the state, so this is partly a state pattern (see step 5).
+
+**Scale from observed data (no assumptions).** According to the register, 35,754 charging points were commissioned in 2025 (stations still in the register). The missing points of the 55 districts are 2,278 to reach the edge of the band (70% of the expected number), which is 0.8 months of the 2025 build rate. To reach the expected number, 10,423 points are missing, which is 3.5 months.
+
+**Value estimate.** Investment and gross revenue per year for closing the gap, in two coverages (to the edge of the band, to the expected number) and three cases (low, base, high). The low case uses the low value of every assumption, the high case the high value.
+
+| Coverage | Missing points | Investment, million EUR (low to high, base) | Gross revenue per year, million EUR (low to high, base) |
+|---|---|---|---|
+| To the edge of the band | 2,278 | 21 to 54 (27) | 4 to 23 (11) |
+| To the expected number | 10,423 | 98 to 249 (125) | 20 to 104 (51) |
+
+Base case per new point: 11,950 EUR investment and 4,914 EUR gross revenue per year.
+
+**What the estimate leaves out.**
+- Revenue is gross (price times energy). The cost of electricity, operation, site rent, payment fees and tax are not subtracted. It is not profit. No margin is assumed because none could be sourced.
+- Investment is hardware, planning and installation. Grid expansion, battery storage, VAT and subsidies are not included. It is probably a lower bound, because the base case uses 50 kW fast chargers.
+- Whether new points would be used as assumed is not known. The data has no utilization numbers per district.
+
+The estimate is an order of magnitude. The assumptions A8 to A14 below are all guesses, partly with a source.
+
+**Code.** `rank_districts` and `estimate_value` in `ranking.py`, the assumptions in `config.py` with their sources next to them. 11 new tests (47 in total): sort order, threshold, robust flag, state from the key, missing points, the arithmetic of the value, and that the low, base and high assumptions are ordered.
+
 ### Assumptions
 
 These are decisions made by the author. They are not confirmed by official documentation.
@@ -307,6 +348,13 @@ These are decisions made by the author. They are not confirmed by official docum
 | A5 | Stations with status "In Wartung" (29 stations, 55 points) are not counted. All other stations in the register have status "In Betrieb". | `clean_register` |
 | A6 | Battery electric cars are the main input. Plug-in hybrids were tested as an alternative and change nothing (step 5b). | model inputs |
 | A7 | The gap is reported in percent of the expected number, not in charging points. The number of missing points is also stored, for the value estimate. | gaps |
+| A8 | A district is "clearly below" if it has more than 30% fewer charging points than expected. 30% is chosen above the typical model error of about 21%. | ranking |
+| A9 | New charging points have the same mix of normal and fast chargers as the existing ones (28.5% fast, observed in the register). | value estimate |
+| A10 | Investment per point, without VAT and grid expansion: normal 4,000 to 7,500 EUR (base 5,750), fast 23,000 to 65,000 EUR (base 27,500). Source: [Öko-Institut, EWI, FCN, 22.07.2022](https://www.oeko.de/fileadmin/oekodoc/ENSURE-II_Ladeinfrastruktur.pdf), table 2-1, public 22 kW and 50 kW. The high value for fast points is the lower bound of the 150 kW class. The prices are from 2021 and 2022 and are not updated. | value estimate |
+| A11 | Charging sessions per point and day: 0.63 (normal) and 2.5 (fast), national average 2025. Seen in a search summary of a [Statista page](https://de.statista.com/statistik/daten/studie/1467870/umfrage/auslastung-ladepunkte). The page was not opened, so the numbers are unverified. | value estimate |
+| A12 | New points are used at 50%, 75% or 100% (low, base, high) of the national average. Pure assumption. | value estimate |
+| A13 | Energy per session: 10 / 15 / 20 kWh (normal) and 25 / 35 / 45 kWh (fast), low / base / high. Pure assumption. | value estimate |
+| A14 | Price: average ad hoc prices of July 2026, 52.3 ct per kWh (AC) and 70.5 ct (DC) ([ACE](https://www.ace.de/elektromobilitaet/laden-wallbox/ladepreise/), seen in a search summary). Drivers are assumed to pay 70%, 85% or 100% of it (low, base, high). The factors are pure assumptions. | value estimate |
 
 ### Limitations known so far
 
@@ -321,13 +369,19 @@ These are decisions made by the author. They are not confirmed by official docum
 - The data shows whether districts with more plug-in hybrids have more charging points. It does not show whether plug-in hybrid owners use public charging.
 - Gradient boosting uses small fixed settings and was not tuned.
 - The two insights of step 4b are in-sample and rest on log fits. BEV and population correlate strongly (0.89), so their separate coefficients are not stable.
+- The value estimate rests on assumptions A8 to A14. Investment figures are from 2021 and 2022, two figures come from search summaries and were not opened, and four are guesses. Revenue is gross, with no electricity or operating cost subtracted.
+- The percent ranking favours small districts, the points ranking favours large ones. Neither says that a district needs more charging points.
+- There are no utilization numbers per district. They would be the most useful missing data for a business case.
 
 ## Planned next
 
-1. **Ranking and value estimate.** List of districts with the largest gap, as a percentage. Every value assumption is marked as an assumption. Because the typical model error is about 21%, only large gaps count.
-2. **Prototype.** Notebook with a map (also saved as a standalone HTML file), and a small API that returns the gap for one district. A short screen recording of the demo as a backup for the presentation.
-3. **Docker.** One Dockerfile for the API, written when the API works.
-4. **Presentation.** 15 minutes, English.
+1. **Prototype.**
+   - A map of the gaps per district (colour from below to above expected), saved as a standalone HTML file that works without internet. The district shapes come from a public file (TopoJSON-Germany, from GADM boundaries of 2017) that is downloaded and not committed. Four shapes are merged to match our districts: Göttingen with Osterode, Trier with Trier-Saarburg, Eisenach with Wartburgkreis.
+   - A small API (FastAPI): list of districts, the stored gap of one district, and an expected number of charging points for given BEV, population and density. The final linear model is saved as a file.
+   - A page with the map and a form that calls the API.
+   - A short screen recording of the demo as a backup for the presentation.
+2. **Docker.** One Dockerfile for the API.
+3. **Presentation.** 15 minutes, English.
 
 ## Extending the prototype (not built)
 
@@ -352,5 +406,6 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 - Step 4c: at the request of the author, the assistant reviewed every transform step for leakage, found the target-derived column `bev_per_point`, and removed it from the pipeline, the tests, the notebook and this README. The pipeline and notebook results did not change (same totals, same section 7 numbers). The tests now number 23.
 - Step 5: the model code (`model.py`), 8 tests and the notebook `02_model.ipynb` were written by the assistant. The model choice (linear regression on logs as the main model, gradient boosting as the comparison, percent gap) was decided by the author after the assistant listed seven model types with arguments for and against. The assistant checked its own statement that the model fits the whole range: the plot suggested a bias at the small districts, a numeric check showed none, and the text was changed to say so. The state pattern in the residuals was found by the assistant while checking the residuals and is reported as a limitation.
 - Step 5b: the code changes, 5 new tests and the notebook `03_phev_sensitivity.ipynb` were written by the assistant, after the author approved a plan that listed the three variants. The assistant planned the check as a function in `src/` plus a short notebook. While reviewing its own notebook it found three errors and fixed them: a sentence that gave the largest difference as 0.5 points when it was 0.8, a table with a repeated column name, and a legend that covered the bars. It also added that the plug-in variants are slightly worse in 8 of 10 splits. An identical mean absolute error of two variants in one table looked suspicious. It was checked and is a coincidence of the fold averages.
+- Step 6: the ranking and value code, 11 tests and the notebook `04_ranking_value.ipynb` were written by the assistant. The assistant searched for sources for the cost and revenue assumptions. A subagent could not read the PDFs, so the assistant extracted the text itself and found the cost table (table 2-1 of the Öko-Institut study). No source was found for energy per session or for a margin, so these are marked as guesses, and no margin is assumed. The reader (charging operator), the definition of the value (investment and gross revenue) and the 30% threshold were set by the assistant as defaults and accepted by the author by asking to go ahead, they were not discussed in detail. The assistant fixed unformatted labels in a figure after looking at it.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.
