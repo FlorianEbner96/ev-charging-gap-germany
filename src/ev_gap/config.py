@@ -22,24 +22,6 @@ KBA_FZ1_URL = (
 )
 KBA_FZ1_FILE = "kba_fz1_2026-01-01.xlsx"
 
-# KBA FZ 1 for the earlier years (1 January 2021 to 2025). Same table, same layout. Used by the outlook model.
-KBA_HISTORY_YEARS = [2021, 2022, 2023, 2024, 2025]
-KBA_YEARS = KBA_HISTORY_YEARS + [2026]
-KBA_FZ1_URL_TEMPLATE = (
-    "https://www.kba.de/SharedDocs/Downloads/DE/Statistik/Fahrzeuge/FZ1/"
-    "fz1_{year}.xlsx?__blob=publicationFile&v=2"
-)
-KBA_FZ1_FILE_TEMPLATE = "kba_fz1_{year}-01-01.xlsx"
-
-# Bundeswahlleiterin (licence dl-de/by-2-0): structure data per Kreis (values from 2021 to 2023) and the
-# results of the European election on 9 June 2024 per Kreis. Used by the outlook model as context.
-STRUCTURE_URL = "https://www.bundeswahlleiterin.de/dam/jcr/c8d845ab-1d69-4c16-a47a-9ed600641217/ew24_strukturdaten.csv"
-STRUCTURE_FILE = "ew24_strukturdaten.csv"
-ELECTION_URL = "https://www.bundeswahlleiterin.de/dam/jcr/32edebff-544d-489d-ae16-0d40faac180e/ew24_kerg2.csv"
-ELECTION_FILE = "ew24_kerg2.csv"
-CARS_BY_YEAR_FILE = PROCESSED_DIR / "cars_by_year.csv"
-CONTEXT_FILE = PROCESSED_DIR / "context.csv"
-
 # Destatis: area and population (Zensus 2022 basis) per Kreis, 31 December 2024.
 DESTATIS_KREISE_URL = (
     "https://www.destatis.de/DE/Themen/Laender-Regionen/Regionales/Gemeindeverzeichnis/"
@@ -64,9 +46,8 @@ HEADERS = {"User-Agent": "Mozilla/5.0 (ev-gap research project)"}
 # The register names Hanau as a district. Destatis has no such Kreis.
 REGISTER_NAME_TO_KEY = {"Kreisfreie Stadt Hanau": "06435"}
 # Keys that are merged into another district.
-# Hanau (KBA 2026) -> Main-Kinzig-Kreis. Trier-Saarburg (Destatis, election data) -> Trier, as in the KBA file.
-# Eisenach (KBA 2021) -> Wartburgkreis (Eisenach became part of it in 2021).
-KEY_MERGES = {"06415": "06435", "07235": "07211", "16056": "16063"}
+# Hanau (KBA) -> Main-Kinzig-Kreis. Trier-Saarburg (Destatis) -> Trier, as in the KBA file.
+KEY_MERGES = {"06415": "06435", "07235": "07211"}
 
 # Model columns. The target is what the model predicts.
 TARGET = "charging_points"
