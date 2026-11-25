@@ -19,8 +19,8 @@ The model describes the current relationship between cars and charging points. I
 | 5. Baseline and model | done |
 | 5b. Plug-in hybrid sensitivity check | done |
 | 6. Ranking and value estimate | done |
-| 7. Prototype: map, API and page | done (the interactive map has not yet been opened in a browser by the author) |
-| 7a. Dockerfile for the API | next |
+| 7. Prototype: map, API and page | done |
+| 7a. Dockerfile for the API | done |
 | 7b. Outlook model and switchable map | planned |
 | 8. Presentation | planned |
 
@@ -48,7 +48,8 @@ The details and the numbers behind each point are in the step log below. Step 7 
 **4. Prototype.**
 - An interactive map (`reports/gap_map.html`, one file, works offline) with a drop-down for three views: gap in percent, missing charging points of the clearly below districts, and robust or not. Hovering shows the district, actual and expected charging points, gap, and both ranks. The same maps as pictures are in `reports/` for the slides.
 - A small web service (FastAPI) with the gap of one district and a what-if endpoint ("how many charging points does a typical district with these numbers have?"). Inputs outside plausible ranges are rejected. The page at `/` combines the map, a district lookup and the what-if form.
-- Planned: a Dockerfile (7a), and a second model with a switchable map (7b).
+- A Docker image that builds the whole project from a fresh clone and runs the service (7a).
+- Planned: a second model with a switchable map (7b).
 
 **5. Business implications, limitations and next steps.**
 - Business use: a ranked list of districts to look at first, in two views (percent for "who lags behind its peers", missing points for "where to build"). The reader is a charging operator, secondary a municipality. It is a screening tool: it says where to look first, not where to build. The next step would be utilization data from operators.
@@ -59,7 +60,7 @@ The details and the numbers behind each point are in the step log below. Step 7 
 - Different reference dates: cars 01.01.2026, charging points 12.11.2026, population 31.12.2024.
 - Next steps for a larger version: see "Extending the prototype".
 
-**Where the figures are:** `notebooks/01_explore_data.ipynb` (data quality, section 7 for the two insights), `notebooks/02_model.ipynb` (model comparison, residuals, state pattern, gaps), `notebooks/03_phev_sensitivity.ipynb` (plug-in hybrids), `notebooks/04_ranking_value.ipynb` (ranked lists, who is on the list, scale, value estimate).
+**Where the figures are:** `notebooks/01_explore_data.ipynb` (data quality, section 7 for the two insights), `notebooks/02_model.ipynb` (model comparison, residuals, state pattern, gaps), `notebooks/03_phev_sensitivity.ipynb` (plug-in hybrids), `notebooks/04_ranking_value.ipynb` (ranked lists, who is on the list, scale, value estimate), `notebooks/05_map_and_api.ipynb` (maps and API calls).
 
 ## How to run
 
@@ -78,7 +79,29 @@ uv run pytest                     # run the tests
 
 **To run the notebook:** open `notebooks/01_explore_data.ipynb` and select the kernel of the `.venv` in this folder. Sections 1 to 6 need only the downloaded raw files. **Section 7 needs the output of the pipeline, so run the pipeline first** (`uv run python -m ev_gap.pipeline`). Without `data/processed/districts.csv`, section 7 stops with an error that says so. The notebooks `02_model.ipynb` and `03_phev_sensitivity.ipynb` also need the pipeline output.
 
-Running the download again is safe. Files that are already in `data/raw/` are skipped. Raw and processed data are not committed.
+Running the download again is safe. Files that are already in `data/raw/` are skipped.
+
+### Run with Docker (service only)
+
+The service can also be run without Python or uv on the machine. Only Docker is needed.
+
+```bash
+docker build -t ev-gap .
+docker run --rm -p 8000:8000 ev-gap     # then open http://127.0.0.1:8000
+```
+
+What happens in the build (two stages, see the `Dockerfile`):
+1. **Build stage.** Installs the locked dependencies, downloads the data, runs the tests, the pipeline, the model, the ranking and the map. The build stops if a test fails.
+2. **Runtime stage.** A slim image with the code and the finished files only: the saved model, the ranking table, the map and the reference dates of the data. It does not contain the raw data, the notebooks or the dev tools. Nothing is trained when the container starts. The service runs as a normal user and has a health check.
+
+Good to know:
+- The first build needs internet (about 60 MB of downloads) and takes a while, because it installs all packages and runs the tests and the analysis steps. Later builds reuse the cache, so they do not download again. To refresh the data, build with `--no-cache`.
+- The register is updated regularly. An image built later contains newer data, and the numbers differ slightly from the ones in this README. `GET /health` shows the reference dates of the data in the image.
+- The model is trained inside the build, with the same locked versions that the service runs with, so the saved model always loads.
+- The image is about 960 MB. It could be made smaller by moving the packages that only the analysis needs (plotly, matplotlib) to a separate dependency group.
+- The notebooks, the tests and the analysis steps are not part of the image. For these, use the virtual environment above.
+
+Raw and processed data are not committed in either way.
 
 ## Data sources
 
@@ -97,6 +120,8 @@ BEV means battery electric vehicle: a car that runs on a battery only. Plug-in h
 ## Project structure
 
 ```
+Dockerfile           two stage build: build and test everything, then a slim image that runs the service
+.dockerignore        keeps local data, models and the virtual environment out of the build
 data/raw/            downloaded files, not committed
 data/processed/      cleaned tables, not committed
 src/ev_gap/
@@ -373,7 +398,7 @@ An earlier version used plotly's world map type, which can fetch map files from 
 | `GET /districts` | all districts, for a drop-down menu |
 | `GET /districts/{key}` | actual and expected charging points, gap, missing points, clearly below, robust, both ranks. The expected value is out of fold |
 | `GET /expected?bev=&population=&density=` | what-if: expected charging points for these inputs, from the final model, and the typical error of the model |
-| `GET /health` | status and the typical error |
+| `GET /health` | status, the typical error and the reference dates of the data (charging register, KBA car stock, Destatis population, and when the pipeline ran) |
 | `GET /` and `GET /map` | the page and the map |
 | `GET /docs` | the automatic documentation |
 
@@ -425,19 +450,18 @@ These are decisions made by the author. They are not confirmed by official docum
 - There are no utilization numbers per district. They would be the most useful missing data for a business case.
 - The map shapes are from 2017 and simplified (Lake Constance is missing). They are only used for drawing. Four shapes are merged to match the data (A15).
 - The what-if endpoint uses a model fitted on all 399 districts, so it has no out of fold guarantee, and it is least reliable outside the range of the real districts. The district endpoint returns the stored out of fold values.
-- The interactive map and the web page were tested with automatic checks of their content. Opening them in a browser to check how they look is a manual step.
+- The interactive map and the web page are covered by automatic checks of their content. The author also opened the map file and the page of the running service in a browser.
 
 ## Planned next
 
-1. **Step 7a: Docker.** One Dockerfile for the API.
-2. **Step 7b: outlook model and switchable map.** A second model, next to the unchanged gap model. It predicts how fast battery electric cars grow in each district, and the map gets a layer for it.
+1. **Step 7b: outlook model and switchable map.** A second model, next to the unchanged gap model. It predicts how fast battery electric cars grow in each district, and the map gets a layer for it.
    - **Data.** KBA car stock per district on 1 January of 2022, 2023, 2024, 2025 and 2026 (same table as now, earlier years, checked to be available). Context variables per district from the Bundeswahlleiterin: structural data (income, GDP, age groups, education, foreign share, housing, employment, unemployment, cars per resident) and the results of the European election 2024 per Kreis. Licence dl-de/by-2-0.
    - **Model.** Growth of the battery electric car stock from last year's growth, the current electric share and the context variables. A regularised linear model and gradient boosting.
    - **Test.** By time: train on the growth until 1 January 2025, test on the growth into 2026. Baselines to beat: every district grows at the national rate, and every district repeats its own last growth. If the model does not beat them, the context variables add nothing, and this is reported.
    - **Link to the gap model.** The predicted future car count goes into the unchanged gap model. The difference between the expected charging points then and now is the additional need if the relationship stays as it is. Horizon: one year.
    - **Switchable map (option A).** The outlook model is trained once for every combination of feature groups (for example voting, income and economy, age, education, foreign share, housing, car mix). The results are stored in a standalone HTML page, checkboxes select a combination, and the map recolours without a server. The page shows the quality of the selected combination next to the map (error on the test year, and the comparison with the baselines), and marks combinations that are not better than a baseline. This is meant to prevent picking the combination that gives the nicest story.
    - **Caveats to state.** Political variables are context variables, not causes. They are a sensitive basis for any decision about where to build. The growth rate changed between the years (purchase subsidy, from memory not checked), so a forecast from four years is uncertain. The model predicts the growth of the car stock, not buying intentions.
-3. **Presentation.** 15 minutes, English.
+2. **Presentation.** 15 minutes, English.
 
 ## Extending the prototype (not built)
 
@@ -465,6 +489,7 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 - Step 5b: the code changes, 5 new tests and the notebook `03_phev_sensitivity.ipynb` were written by the assistant, after the author approved a plan that listed the three variants. The assistant planned the check as a function in `src/` plus a short notebook. While reviewing its own notebook it found three errors and fixed them: a sentence that gave the largest difference as 0.5 points when it was 0.8, a table with a repeated column name, and a legend that covered the bars. It also added that the plug-in variants are slightly worse in 8 of 10 splits. An identical mean absolute error of two variants in one table looked suspicious. It was checked and is a coincidence of the fold averages.
 - Step 6: the ranking and value code, 11 tests and the notebook `04_ranking_value.ipynb` were written by the assistant. The assistant searched for sources for the cost and revenue assumptions. A subagent could not read the PDFs, so the assistant extracted the text itself and found the cost table (table 2-1 of the Öko-Institut study). No source was found for energy per session or for a margin, so these are marked as guesses, and no margin is assumed. The reader (charging operator), the definition of the value (investment and gross revenue) and the 30% threshold were set by the assistant as defaults and accepted by the author by asking to go ahead, they were not discussed in detail. The assistant fixed unformatted labels in a figure after looking at it.
 
-- Step 7: the geometry, map and API modules, 32 tests, the page and the notebook `05_map_and_api.ipynb` were written by the assistant. The author asked for a map with switchable layers and an API like a taxi duration service, and later for a second model with switchable features. The assistant checked the available boundary files before planning. The first file it found (GADM based, 434 districts, no key) was unusable, and the second (TopoJSON, five digit key) matched 398 of 399 keys. A test fixture of the assistant was wrong (an open ring) and was fixed. A white spot in the points map was checked by drawing a labelled zoom: it is Bonn, correctly drawn inside the Rhein-Sieg-Kreis. The assistant could not open the interactive map in a browser, replaced the plotly map type that might fetch files from the internet by a tile-less one, and stated this as a manual check. Step 7b was designed with the author. The assistant proposed to show the model quality next to the switchable map, to prevent choosing the nicest combination, and the author accepted this.
+- Step 7: the geometry, map and API modules, 32 tests, the page and the notebook `05_map_and_api.ipynb` were written by the assistant. The author asked for a map with switchable layers and an API like a taxi duration service, and later for a second model with switchable features. The assistant checked the available boundary files before planning. The first file it found (GADM based, 434 districts, no key) was unusable, and the second (TopoJSON, five digit key) matched 398 of 399 keys. A test fixture of the assistant was wrong (an open ring) and was fixed. A white spot in the points map was checked by drawing a labelled zoom: it is Bonn, correctly drawn inside the Rhein-Sieg-Kreis. The assistant could not open the interactive map in a browser, replaced the plotly map type that might fetch files from the internet by a tile-less one, and stated this as a manual check. Step 7b was designed with the author. The assistant proposed to show the model quality next to the switchable map, to prevent choosing the nicest combination, and the author accepted this. The author then opened the map file and the page of the running service in a browser.
+- Step 7a: the Dockerfile, the `.dockerignore`, the reference dates in `/health` and 4 new tests (83 in total) were written by the assistant. The author chose to build the data and the model inside the Docker build. The assistant noticed that the first image was 1.47 GB, which was more than its own estimate of 600 to 800 MB. It found that uv's download cache was left in the image, switched it off, and the image became 960 MB. The container was tested by starting it and calling the endpoints.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.

@@ -4,6 +4,7 @@ Start it with:  uv run uvicorn ev_gap.api:create_app --factory
 Then open http://127.0.0.1:8000 (page with the map) or http://127.0.0.1:8000/docs (all endpoints).
 """
 
+import json
 from pathlib import Path
 
 import pandas as pd
@@ -13,6 +14,7 @@ from pydantic import BaseModel
 
 from ev_gap import config
 from ev_gap.model import MODEL_FILE, load_model
+from ev_gap.pipeline import DATA_INFO_FILE
 from ev_gap.ranking import RANKING_FILE
 
 WEB_DIR = Path(__file__).parent / "web"
@@ -50,11 +52,14 @@ class Expected(BaseModel):
     note: str = METHOD_NOTE
 
 
-def create_app(model_path: Path = MODEL_FILE, ranking_path: Path = RANKING_FILE, map_path: Path = MAP_FILE) -> FastAPI:
+def create_app(model_path: Path = MODEL_FILE, ranking_path: Path = RANKING_FILE, map_path: Path = MAP_FILE,
+               info_path: Path = DATA_INFO_FILE) -> FastAPI:
     package = load_model(model_path)
     if not ranking_path.exists():
         raise FileNotFoundError(f"{ranking_path} is missing. Run: python -m ev_gap.ranking")
     ranking = pd.read_csv(ranking_path, dtype={"key": str}).set_index("key", drop=False)
+    # Reference dates of the data, written by the pipeline. Missing in older runs, then the answer says null.
+    data_info = json.loads(info_path.read_text(encoding="utf-8")) if info_path.exists() else None
 
     app = FastAPI(
         title="EV charging gap in Germany",
@@ -64,7 +69,8 @@ def create_app(model_path: Path = MODEL_FILE, ranking_path: Path = RANKING_FILE,
 
     @app.get("/health")
     def health() -> dict:
-        return {"status": "ok", "districts": int(len(ranking)), "typical_error_pct": package["typical_error_pct"]}
+        return {"status": "ok", "districts": int(len(ranking)), "typical_error_pct": package["typical_error_pct"],
+                "data_dates": data_info}
 
     @app.get("/districts", response_model=list[District])
     def districts() -> list[District]:

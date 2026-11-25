@@ -1,3 +1,5 @@
+import json
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -28,13 +30,29 @@ def client(tmp_path):
     })
     rank_districts(gaps).to_csv(tmp_path / "ranking.csv", index=False)
     (tmp_path / "map.html").write_text("<html>map</html>", encoding="utf-8")
-    app = create_app(tmp_path / "model.joblib", tmp_path / "ranking.csv", tmp_path / "map.html")
+    (tmp_path / "data_info.json").write_text(
+        json.dumps({"charging_register": "2026-11-12", "kba_car_stock": "2026-01-01", "destatis_population": "2024-12-31",
+                    "pipeline_run_utc": "2026-11-26T10:00:00+00:00"}), encoding="utf-8")
+    app = create_app(tmp_path / "model.joblib", tmp_path / "ranking.csv", tmp_path / "map.html", tmp_path / "data_info.json")
     return TestClient(app)
 
 
 def test_health(client):
     body = client.get("/health").json()
     assert body["status"] == "ok" and body["districts"] == 3 and body["typical_error_pct"] == 21.1
+
+
+def test_health_reports_the_reference_dates_of_the_data(client):
+    dates = client.get("/health").json()["data_dates"]
+    assert dates["charging_register"] == "2026-11-12"
+    assert dates["kba_car_stock"] == "2026-01-01"
+    assert dates["destatis_population"] == "2024-12-31"
+
+
+def test_health_works_without_a_data_info_file(client, tmp_path):
+    app = create_app(tmp_path / "model.joblib", tmp_path / "ranking.csv", tmp_path / "map.html", tmp_path / "missing.json")
+    body = TestClient(app).get("/health").json()
+    assert body["status"] == "ok" and body["data_dates"] is None
 
 
 def test_districts_are_listed_by_name(client):
