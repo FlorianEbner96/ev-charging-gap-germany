@@ -4,11 +4,14 @@ version = "0.1.0"
 description = "Where does public EV charging infrastructure lag behind electric car numbers in Germany?"
 requires-python = ">=3.13"
 dependencies = [
+    "fastapi>=0.165.0",
     "matplotlib>=3.9",
     "openpyxl>=3.1",
     "pandas>=2.2",
+    "plotly>=7.2.0",
     "requests>=2.32",
     "scikit-learn>=1.9.1",
+    "uvicorn>=0.54.0",
 ]
 
 [build-system]
@@ -23,6 +26,7 @@ testpaths = ["tests"]
 
 [dependency-groups]
 dev = [
+    "httpx>=0.28.1",
     "ipykernel>=6.29",
     "nbconvert>=7.17.2",
     "nbformat>=5.11.1",

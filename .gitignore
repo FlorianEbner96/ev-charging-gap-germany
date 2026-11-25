@@ -228,3 +228,5 @@ mlflow.db
 mlartifacts/
 CLAUDE.local.md
 CLAUDE.md
+
+models/

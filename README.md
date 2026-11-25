@@ -19,7 +19,9 @@ The model describes the current relationship between cars and charging points. I
 | 5. Baseline and model | done |
 | 5b. Plug-in hybrid sensitivity check | done |
 | 6. Ranking and value estimate | done |
-| 7. Prototype (map notebook, API) | planned |
+| 7. Prototype: map, API and page | done (the interactive map has not yet been opened in a browser by the author) |
+| 7a. Dockerfile for the API | next |
+| 7b. Outlook model and switchable map | planned |
 | 8. Presentation | planned |
 
 ## Key findings (summary for the presentation)
@@ -43,7 +45,10 @@ The details and the numbers behind each point are in the step log below. Step 7 
 - Scale: the missing points of the 55 districts are 2,278 to reach 70% of the expected number, and 10,423 to reach the expected number. That is 0.8 and 3.5 months of the 2025 build rate (35,754 points, from the register).
 - Rough value, built from assumptions (A8 to A14): closing the gap to 70% of expected needs about 27 million EUR of investment (range 21 to 54) and brings about 11 million EUR of gross revenue per year (range 4 to 23). Closing it to the expected number needs about 125 million EUR (range 98 to 249) and brings about 51 million EUR per year (range 20 to 104). Revenue is before electricity and operating cost, so it is not profit. This is an order of magnitude, not a business case.
 
-**4. Prototype.** Open (step 7).
+**4. Prototype.**
+- An interactive map (`reports/gap_map.html`, one file, works offline) with a drop-down for three views: gap in percent, missing charging points of the clearly below districts, and robust or not. Hovering shows the district, actual and expected charging points, gap, and both ranks. The same maps as pictures are in `reports/` for the slides.
+- A small web service (FastAPI) with the gap of one district and a what-if endpoint ("how many charging points does a typical district with these numbers have?"). Inputs outside plausible ranges are rejected. The page at `/` combines the map, a district lookup and the what-if form.
+- Planned: a Dockerfile (7a), and a second model with a switchable map (7b).
 
 **5. Business implications, limitations and next steps.**
 - Business use: a ranked list of districts to look at first, in two views (percent for "who lags behind its peers", missing points for "where to build"). The reader is a charging operator, secondary a municipality. It is a screening tool: it says where to look first, not where to build. The next step would be utilization data from operators.
@@ -62,10 +67,12 @@ Requirements: [uv](https://docs.astral.sh/uv/getting-started/installation/) and 
 
 ```bash
 uv sync                           # create .venv and install packages
-uv run python -m ev_gap.download  # download the three raw files into data/raw/
+uv run python -m ev_gap.download  # download the four raw files into data/raw/ (three data files, one district shape file)
 uv run python -m ev_gap.pipeline  # clean, join, write data/processed/districts.csv
 uv run python -m ev_gap.model     # cross validation of the models, write data/processed/gaps.csv
 uv run python -m ev_gap.ranking   # ranking and value estimate, write ranking.csv and value_scenarios.csv
+uv run python -m ev_gap.mapping   # interactive map reports/gap_map.html (works offline) and two pictures
+uv run uvicorn ev_gap.api:create_app --factory   # the web service, then open http://127.0.0.1:8000 (or /docs)
 uv run pytest                     # run the tests
 ```
 
@@ -80,6 +87,8 @@ Running the download again is safe. Files that are already in `data/raw/` are sk
 | Bundesnetzagentur Ladesäulenregister | Public charging stations with number of points, power, commissioning date, district name, coordinates. CSV, about 58 MB. Licence CC BY 4.0 | 12.11.2026 | [Bundesnetzagentur](https://www.bundesnetzagentur.de/DE/Fachthemen/ElektrizitaetundGas/E-Mobilitaet/start.html) |
 | Kraftfahrt-Bundesamt, table FZ 1.2 | Passenger cars per Zulassungsbezirk by fuel type, `Elektro (BEV)` and plug-in hybrid as separate columns. XLSX | 01.01.2026 | [KBA direct file](https://www.kba.de/SharedDocs/Downloads/DE/Statistik/Fahrzeuge/FZ1/fz1_2026.xlsx?__blob=publicationFile&v=2) |
 | Destatis, Kreisfreie Städte und Landkreise | Area, population (Zensus 2022 basis) and density per Kreis. XLSX | 31.12.2024 | [Destatis page](https://www.destatis.de/DE/Themen/Laender-Regionen/Regionales/Gemeindeverzeichnis/Administrativ/04-kreise.html) |
+
+A fourth file is used only to draw the map: a [TopoJSON file of the German districts](https://github.com/AliceWi/TopoJSON-Germany) (boundaries of 2017, built from GADM data, with a five digit key per district). It is downloaded by the script and not committed, because the GADM terms limit the use to non-commercial purposes. The repository's own licence statement was not checked.
 
 The three reference dates differ. Cars are about 10 months older than the charging points, and the population is almost 2 years older. This is a limitation of the analysis.
 
@@ -99,11 +108,18 @@ src/ev_gap/
   pipeline.py        run extract, transform and write data/processed/districts.csv
   model.py           baseline, linear model on logs, gradient boosting, cross validation, gaps
   ranking.py         ranking of the districts and the value estimate
+  geometry.py        district shapes: decode the TopoJSON file, merge four old shapes
+  mapping.py         interactive map (HTML, offline) and static pictures
+  api.py             the web service (FastAPI)
+  web/index.html     the page with the map, a district lookup and the what-if form
+models/              the saved model for the API, not committed
+reports/             the map file and pictures for slides
 notebooks/
   01_explore_data.ipynb   exploration only, not part of the pipeline
   02_model.ipynb          model comparison, residuals, gaps (needs the pipeline output)
   03_phev_sensitivity.ipynb   does counting plug-in hybrids change the result (needs the pipeline output)
   04_ranking_value.ipynb      ranked lists, value estimate (needs the pipeline and model output)
+  05_map_and_api.ipynb        maps of the gaps and examples of the API calls (needs the output of the steps above)
 tests/
   conftest.py        small made-up tables, one district per rule
   test_extract.py    layout parsing of the KBA and Destatis sheets
@@ -112,6 +128,9 @@ tests/
   test_pipeline_integration.py   end to end on the real files (skipped if not downloaded)
   test_model.py      baseline learns from training districts only, no leakage of a district's own value, folds, gap
   test_ranking.py    sort order, threshold, robust flag, missing points, value arithmetic
+  test_geometry.py   TopoJSON decoding, merged shapes, missing shapes
+  test_mapping.py    map views, offline file, static picture
+  test_api.py        endpoints, errors, input limits
 ```
 
 ## Step log
@@ -335,6 +354,37 @@ The estimate is an order of magnitude. The assumptions A8 to A14 below are all g
 
 **Code.** `rank_districts` and `estimate_value` in `ranking.py`, the assumptions in `config.py` with their sources next to them. 11 new tests (47 in total): sort order, threshold, robust flag, state from the key, missing points, the arithmetic of the value, and that the low, base and high assumptions are ordered.
 
+### Step 7: Prototype (map, API and page)
+
+**To reproduce this step, run the pipeline, the model and the ranking first** (see "How to run"), then `uv run python -m ev_gap.mapping` for the map and `uv run uvicorn ev_gap.api:create_app --factory` for the service. The notebook `05_map_and_api.ipynb` shows both.
+
+**Map.** The shapes come from a public TopoJSON file with a five digit key per district. A small decoder turns it into coordinates (`geometry.py`, with tests). Four old shapes are merged to match our districts (A15), and the code stops with an error if one of the 399 districts has no shape. The result is checked: all 399 shapes load, and their coordinates lie within Germany (longitude 5.9 to 15.0, latitude 47.3 to 55.1).
+
+The interactive map is a plotly map without background tiles (`white-bg`), saved in one HTML file of about 6 MB that contains the plotly library. It does not load anything from the internet. A drop-down switches between three views. The colour scale of the gap is capped at -60% and +60%, and the points view at 600, so that one district (München) does not set the scale. A line under the map says that the colour is not a measure of need.
+
+An earlier version used plotly's world map type, which can fetch map files from the internet. It was replaced by the tile-less type because offline use matters for the presentation.
+
+**What the maps show.** The districts below expected cluster in the south-west (Rheinland-Pfalz, Saarland) and in parts of Nordrhein-Westfalen and Hessen. By missing points, München is the largest single shortfall, followed by districts around Köln.
+
+**API.** FastAPI, started with `uvicorn ev_gap.api:create_app --factory`:
+
+| Endpoint | Returns |
+|---|---|
+| `GET /districts` | all districts, for a drop-down menu |
+| `GET /districts/{key}` | actual and expected charging points, gap, missing points, clearly below, robust, both ranks. The expected value is out of fold |
+| `GET /expected?bev=&population=&density=` | what-if: expected charging points for these inputs, from the final model, and the typical error of the model |
+| `GET /health` | status and the typical error |
+| `GET /` and `GET /map` | the page and the map |
+| `GET /docs` | the automatic documentation |
+
+Inputs are validated: for example battery electric cars must be above 0 and at most 200,000, residents between 1,000 and 5 million, density at most 20,000 per km2. Invalid values return a 422 error. A district key must have five digits (422 for a wrong format, 404 for an unknown key). The service stops at start with a clear message if the saved model or the ranking file is missing. The response carries a note that the expected number is not the number of charging points a district needs.
+
+The final model is the linear model on logs, fitted on all 399 districts and saved with joblib in `models/` together with its typical error. In a test call, the inputs of Kusel return 150.0 expected charging points, the same as the out of fold value (150.2). Doubling the electric cars from 1,262 to 2,524 gives 209.2, not 300, because the elasticity is about 0.5.
+
+**Page.** `GET /` shows a district drop-down with its result, a what-if form and the map in a frame. It uses no outside libraries.
+
+**Tests.** 32 new tests (79 in total): TopoJSON decoding (arcs, reversed arcs, closed rings, merges, missing shapes), the map (views, caps, offline file, picture) and the API (endpoints, errors, ranges). A smoke test with a started server returned the expected answers for health, a district, the what-if call, the map file and the page.
+
 ### Assumptions
 
 These are decisions made by the author. They are not confirmed by official documentation.
@@ -355,6 +405,7 @@ These are decisions made by the author. They are not confirmed by official docum
 | A12 | New points are used at 50%, 75% or 100% (low, base, high) of the national average. Pure assumption. | value estimate |
 | A13 | Energy per session: 10 / 15 / 20 kWh (normal) and 25 / 35 / 45 kWh (fast), low / base / high. Pure assumption. | value estimate |
 | A14 | Price: average ad hoc prices of July 2026, 52.3 ct per kWh (AC) and 70.5 ct (DC) ([ACE](https://www.ace.de/elektromobilitaet/laden-wallbox/ladepreise/), seen in a search summary). Drivers are assumed to pay 70%, 85% or 100% of it (low, base, high). The factors are pure assumptions. | value estimate |
+| A15 | For the map, the shapes of four old districts are merged into the districts of our data: Göttingen and Osterode into Göttingen (2016), Trier-Saarburg into Trier (as in A2), Eisenach into Wartburgkreis (2021, from my own knowledge, consistent with the Destatis list). The merged shapes are drawn side by side. | map |
 
 ### Limitations known so far
 
@@ -372,15 +423,20 @@ These are decisions made by the author. They are not confirmed by official docum
 - The value estimate rests on assumptions A8 to A14. Investment figures are from 2021 and 2022, two figures come from search summaries and were not opened, and four are guesses. Revenue is gross, with no electricity or operating cost subtracted.
 - The percent ranking favours small districts, the points ranking favours large ones. Neither says that a district needs more charging points.
 - There are no utilization numbers per district. They would be the most useful missing data for a business case.
+- The map shapes are from 2017 and simplified (Lake Constance is missing). They are only used for drawing. Four shapes are merged to match the data (A15).
+- The what-if endpoint uses a model fitted on all 399 districts, so it has no out of fold guarantee, and it is least reliable outside the range of the real districts. The district endpoint returns the stored out of fold values.
+- The interactive map and the web page were tested with automatic checks of their content. Opening them in a browser to check how they look is a manual step.
 
 ## Planned next
 
-1. **Prototype.**
-   - A map of the gaps per district (colour from below to above expected), saved as a standalone HTML file that works without internet. The district shapes come from a public file (TopoJSON-Germany, from GADM boundaries of 2017) that is downloaded and not committed. Four shapes are merged to match our districts: Göttingen with Osterode, Trier with Trier-Saarburg, Eisenach with Wartburgkreis.
-   - A small API (FastAPI): list of districts, the stored gap of one district, and an expected number of charging points for given BEV, population and density. The final linear model is saved as a file.
-   - A page with the map and a form that calls the API.
-   - A short screen recording of the demo as a backup for the presentation.
-2. **Docker.** One Dockerfile for the API.
+1. **Step 7a: Docker.** One Dockerfile for the API.
+2. **Step 7b: outlook model and switchable map.** A second model, next to the unchanged gap model. It predicts how fast battery electric cars grow in each district, and the map gets a layer for it.
+   - **Data.** KBA car stock per district on 1 January of 2022, 2023, 2024, 2025 and 2026 (same table as now, earlier years, checked to be available). Context variables per district from the Bundeswahlleiterin: structural data (income, GDP, age groups, education, foreign share, housing, employment, unemployment, cars per resident) and the results of the European election 2024 per Kreis. Licence dl-de/by-2-0.
+   - **Model.** Growth of the battery electric car stock from last year's growth, the current electric share and the context variables. A regularised linear model and gradient boosting.
+   - **Test.** By time: train on the growth until 1 January 2025, test on the growth into 2026. Baselines to beat: every district grows at the national rate, and every district repeats its own last growth. If the model does not beat them, the context variables add nothing, and this is reported.
+   - **Link to the gap model.** The predicted future car count goes into the unchanged gap model. The difference between the expected charging points then and now is the additional need if the relationship stays as it is. Horizon: one year.
+   - **Switchable map (option A).** The outlook model is trained once for every combination of feature groups (for example voting, income and economy, age, education, foreign share, housing, car mix). The results are stored in a standalone HTML page, checkboxes select a combination, and the map recolours without a server. The page shows the quality of the selected combination next to the map (error on the test year, and the comparison with the baselines), and marks combinations that are not better than a baseline. This is meant to prevent picking the combination that gives the nicest story.
+   - **Caveats to state.** Political variables are context variables, not causes. They are a sensitive basis for any decision about where to build. The growth rate changed between the years (purchase subsidy, from memory not checked), so a forecast from four years is uncertain. The model predicts the growth of the car stock, not buying intentions.
 3. **Presentation.** 15 minutes, English.
 
 ## Extending the prototype (not built)
@@ -392,7 +448,8 @@ These are ideas for a larger version. None of them is part of the current code.
 - **Scheduled retraining with checks.** Retrain after each new release and compare with the previous model before it goes live.
 - **Monitoring.** New charging points appear every month, so the relationship between cars and charging points changes. Track the typical error and the distribution of the gaps over time.
 - **Better inputs.** Registration place is a weak stand-in for where cars charge. Commuter flows, traffic counts, or the location of each charging point would give a finer unit than the district. The register has coordinates, which are not used yet.
-- **Service.** The API in a container, a build and test step on every change (CI), and the processed table in a database instead of a file.
+- **Service.** A build and test step on every change (CI), and the processed table in a database instead of a file.
+- **Live retraining (option B of the switchable map).** The checkboxes of the switchable map would call the API, which retrains the outlook model on the selected features and returns new predictions. A regularised linear model on about 400 districts takes milliseconds. It needs a running server, so the standalone page (option A) is the base.
 
 ## How AI tools were used
 
@@ -407,5 +464,7 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 - Step 5: the model code (`model.py`), 8 tests and the notebook `02_model.ipynb` were written by the assistant. The model choice (linear regression on logs as the main model, gradient boosting as the comparison, percent gap) was decided by the author after the assistant listed seven model types with arguments for and against. The assistant checked its own statement that the model fits the whole range: the plot suggested a bias at the small districts, a numeric check showed none, and the text was changed to say so. The state pattern in the residuals was found by the assistant while checking the residuals and is reported as a limitation.
 - Step 5b: the code changes, 5 new tests and the notebook `03_phev_sensitivity.ipynb` were written by the assistant, after the author approved a plan that listed the three variants. The assistant planned the check as a function in `src/` plus a short notebook. While reviewing its own notebook it found three errors and fixed them: a sentence that gave the largest difference as 0.5 points when it was 0.8, a table with a repeated column name, and a legend that covered the bars. It also added that the plug-in variants are slightly worse in 8 of 10 splits. An identical mean absolute error of two variants in one table looked suspicious. It was checked and is a coincidence of the fold averages.
 - Step 6: the ranking and value code, 11 tests and the notebook `04_ranking_value.ipynb` were written by the assistant. The assistant searched for sources for the cost and revenue assumptions. A subagent could not read the PDFs, so the assistant extracted the text itself and found the cost table (table 2-1 of the Öko-Institut study). No source was found for energy per session or for a margin, so these are marked as guesses, and no margin is assumed. The reader (charging operator), the definition of the value (investment and gross revenue) and the 30% threshold were set by the assistant as defaults and accepted by the author by asking to go ahead, they were not discussed in detail. The assistant fixed unformatted labels in a figure after looking at it.
+
+- Step 7: the geometry, map and API modules, 32 tests, the page and the notebook `05_map_and_api.ipynb` were written by the assistant. The author asked for a map with switchable layers and an API like a taxi duration service, and later for a second model with switchable features. The assistant checked the available boundary files before planning. The first file it found (GADM based, 434 districts, no key) was unusable, and the second (TopoJSON, five digit key) matched 398 of 399 keys. A test fixture of the assistant was wrong (an open ring) and was fixed. A white spot in the points map was checked by drawing a labelled zoom: it is Bonn, correctly drawn inside the Rhein-Sieg-Kreis. The assistant could not open the interactive map in a browser, replaced the plotly map type that might fetch files from the internet by a tile-less one, and stated this as a manual check. Step 7b was designed with the author. The assistant proposed to show the model quality next to the switchable map, to prevent choosing the nicest combination, and the author accepted this.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.

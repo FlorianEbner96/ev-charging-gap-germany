@@ -9,6 +9,7 @@ The gap of a district is its actual number of charging points compared with the 
 The expected number always comes from a model that did not see that district (out of fold).
 """
 
+import joblib
 import numpy as np
 import pandas as pd
 from sklearn.base import BaseEstimator, RegressorMixin, clone
@@ -146,6 +147,33 @@ def build_gap_table(districts: pd.DataFrame, out_of_fold: pd.DataFrame) -> pd.Da
     return table
 
 
+MODEL_FILE = config.MODELS_DIR / "expected_points.joblib"
+
+
+def save_model(districts: pd.DataFrame, typical_error_pct: float, path=MODEL_FILE) -> dict:
+    """Fit the linear model on all districts and save it with a note about how good it is.
+
+    The saved model is for what-if questions in the API. The gaps of the existing districts come from
+    the out of fold values, because a model that has seen a district would make it look more normal.
+    """
+    model = make_models()[LINEAR].fit(districts[config.FEATURE_COLUMNS], districts[config.TARGET])
+    package = {
+        "model": model,
+        "features": list(config.FEATURE_COLUMNS),
+        "typical_error_pct": round(float(typical_error_pct), 1),
+        "trained_on_districts": int(len(districts)),
+    }
+    path.parent.mkdir(parents=True, exist_ok=True)
+    joblib.dump(package, path)
+    return package
+
+
+def load_model(path=MODEL_FILE) -> dict:
+    if not path.exists():
+        raise FileNotFoundError(f"{path} is missing. Run: python -m ev_gap.model")
+    return joblib.load(path)
+
+
 def run(target=GAPS_FILE) -> pd.DataFrame:
     districts = load_districts()
     models = make_models()
@@ -153,6 +181,9 @@ def run(target=GAPS_FILE) -> pd.DataFrame:
     print("Random 5-fold cross validation")
     out_of_fold, per_fold = cross_validate(districts, models, random_folds())
     print(summarise(per_fold).to_string())
+    typical_error = per_fold[per_fold["model"] == LINEAR]["median_error_pct"].mean()
+    save_model(districts, typical_error)
+    print(f"model saved to {MODEL_FILE} (typical error {typical_error:.1f}%)")
 
     print("\nCross validation by federal state (whole states are held out)")
     _, per_fold_state = cross_validate(districts, models, GroupKFold(n_splits=5), groups=state_of(districts))

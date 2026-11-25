@@ -29,6 +29,16 @@ DESTATIS_KREISE_URL = (
 )
 DESTATIS_KREISE_FILE = "destatis_kreise_2024-12-31.xlsx"
 
+# District shapes for the map: TopoJSON of Germany with a five digit district id (2017, from GADM boundaries).
+# Only used for drawing. Not committed, because the GADM terms limit use to non-commercial purposes.
+BOUNDARIES_URL = "https://raw.githubusercontent.com/AliceWi/TopoJSON-Germany/master/germany.json"
+BOUNDARIES_FILE = "germany_topojson_2017.json"
+# Shapes that are merged to match our districts (see README, step 7):
+# Göttingen and Osterode (merged 2016), Trier-Saarburg into Trier (as in the KBA file), Eisenach into Wartburgkreis (2021).
+SHAPE_MERGES = {"03152": "03159", "03156": "03159", "07235": "07211", "16056": "16063"}
+REPORTS_DIR = ROOT / "reports"
+MODELS_DIR = ROOT / "models"
+
 # Some servers refuse the default python-requests agent.
 HEADERS = {"User-Agent": "Mozilla/5.0 (ev-gap research project)"}
 

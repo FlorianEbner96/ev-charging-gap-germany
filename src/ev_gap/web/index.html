@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EV charging gap in Germany</title>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; color: #222; background: #fafafa; }
+  header, main { max-width: 1100px; margin: 0 auto; padding: 0 16px; }
+  header { padding-top: 20px; }
+  h1 { margin: 0 0 4px; font-size: 1.5rem; }
+  .lead { color: #555; margin: 0 0 16px; }
+  .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 800px) { .cards { grid-template-columns: 1fr; } }
+  section.card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 16px; }
+  h2 { font-size: 1.05rem; margin: 0 0 10px; }
+  label { display: block; font-size: 0.85rem; color: #555; margin-top: 8px; }
+  select, input { width: 100%; padding: 6px; box-sizing: border-box; font-size: 1rem; }
+  button { margin-top: 12px; padding: 8px 14px; font-size: 1rem; cursor: pointer; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 12px 0 0; }
+  dt { color: #555; } dd { margin: 0; font-weight: 600; }
+  .note { font-size: 0.85rem; color: #666; margin-top: 10px; }
+  .below { color: #b2182b; } .error { color: #b2182b; }
+  iframe { width: 100%; height: 760px; border: 1px solid #ddd; border-radius: 8px; background: #fff; margin-top: 16px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>EV charging gap in Germany</h1>
+  <p class="lead">Public charging points per district compared with the number a typical district of the same size has.
+  The colour of the map is the distance from that number. It is not a measure of need.</p>
+</header>
+<main>
+  <div class="cards">
+    <section class="card">
+      <h2>Look up a district</h2>
+      <label for="district">District</label>
+      <select id="district"><option value="">Loading...</option></select>
+      <dl id="district-result"></dl>
+      <p class="note" id="district-note"></p>
+    </section>
+    <section class="card">
+      <h2>What-if: expected charging points</h2>
+      <p class="note" style="margin-top:0">Enter the numbers of a district. The default values are those of Kusel.</p>
+      <label for="bev">Battery electric cars</label><input id="bev" type="number" min="1" value="1262">
+      <label for="population">Residents</label><input id="population" type="number" min="1000" value="69334">
+      <label for="density">Residents per km2</label><input id="density" type="number" min="1" value="121">
+      <button id="ask">Estimate</button>
+      <dl id="whatif-result"></dl>
+      <p class="note" id="whatif-note"></p>
+    </section>
+  </div>
+  <iframe src="/map" title="Map of the gaps per district"></iframe>
+</main>
+<script>
+  const show = (list, rows) => {
+    list.replaceChildren();
+    rows.forEach(([name, value, css]) => {
+      const dt = document.createElement("dt"); dt.textContent = name;
+      const dd = document.createElement("dd"); dd.textContent = value; if (css) dd.className = css;
+      list.append(dt, dd);
+    });
+  };
+  const fail = (list, message) => show(list, [["Error", message, "error"]]);
+
+  fetch("/districts").then(r => r.json()).then(districts => {
+    const select = document.getElementById("district");
+    select.replaceChildren(new Option("Choose a district", ""));
+    districts.forEach(d => select.append(new Option(`${d.name} (${d.state})`, d.key)));
+  });
+
+  document.getElementById("district").addEventListener("change", async event => {
+    const result = document.getElementById("district-result");
+    const note = document.getElementById("district-note");
+    if (!event.target.value) { result.replaceChildren(); note.textContent = ""; return; }
+    const response = await fetch(`/districts/${event.target.value}`);
+    if (!response.ok) { fail(result, "District not found"); return; }
+    const d = await response.json();
+    show(result, [
+      ["Charging points (actual)", d.actual],
+      ["Expected", d.expected],
+      ["Gap", `${d.gap_pct > 0 ? "+" : ""}${d.gap_pct}%`, d.clearly_below ? "below" : ""],
+      ["Missing points", d.missing_points],
+      ["Clearly below (more than 30%)", d.clearly_below ? (d.robust ? "yes, both models agree" : "yes") : "no"],
+      ["Rank by percent / by points", `${d.rank_by_percent} / ${d.rank_by_points}`],
+    ]);
+    note.textContent = d.note;
+  });
+
+  document.getElementById("ask").addEventListener("click", async () => {
+    const result = document.getElementById("whatif-result");
+    const note = document.getElementById("whatif-note");
+    const query = new URLSearchParams({
+      bev: document.getElementById("bev").value,
+      population: document.getElementById("population").value,
+      density: document.getElementById("density").value,
+    });
+    const response = await fetch(`/expected?${query}`);
+    if (!response.ok) { fail(result, "Please check the numbers"); note.textContent = ""; return; }
+    const e = await response.json();
+    show(result, [["Expected charging points", e.expected_points], ["Typical error of the model", `about ${e.typical_error_pct}%`]]);
+    note.textContent = e.note;
+  });
+</script>
+</body>
+</html>

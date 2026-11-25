@@ -43,6 +43,7 @@ def download_all(raw_dir: Path = config.RAW_DIR) -> dict[str, Path]:
         "bnetza": download_file(bnetza_url, raw_dir / bnetza_url.rsplit("/", 1)[-1]),
         "kba": download_file(config.KBA_FZ1_URL, raw_dir / config.KBA_FZ1_FILE),
         "destatis": download_file(config.DESTATIS_KREISE_URL, raw_dir / config.DESTATIS_KREISE_FILE),
+        "boundaries": download_file(config.BOUNDARIES_URL, raw_dir / config.BOUNDARIES_FILE),
     }
 
 
