@@ -39,12 +39,19 @@ def download_file(url: str, target: Path) -> Path:
 
 def download_all(raw_dir: Path = config.RAW_DIR) -> dict[str, Path]:
     bnetza_url = find_bnetza_csv_url()
-    return {
+    files = {
         "bnetza": download_file(bnetza_url, raw_dir / bnetza_url.rsplit("/", 1)[-1]),
         "kba": download_file(config.KBA_FZ1_URL, raw_dir / config.KBA_FZ1_FILE),
         "destatis": download_file(config.DESTATIS_KREISE_URL, raw_dir / config.DESTATIS_KREISE_FILE),
         "boundaries": download_file(config.BOUNDARIES_URL, raw_dir / config.BOUNDARIES_FILE),
+        "structure": download_file(config.STRUCTURE_URL, raw_dir / config.STRUCTURE_FILE),
+        "election": download_file(config.ELECTION_URL, raw_dir / config.ELECTION_FILE),
     }
+    # the car stock of the earlier years, for the outlook model
+    for year in config.KBA_HISTORY_YEARS:
+        files[f"kba_{year}"] = download_file(
+            config.KBA_FZ1_URL_TEMPLATE.format(year=year), raw_dir / config.KBA_FZ1_FILE_TEMPLATE.format(year=year))
+    return files
 
 
 if __name__ == "__main__":

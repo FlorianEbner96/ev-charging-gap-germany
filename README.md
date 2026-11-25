@@ -21,7 +21,10 @@ The model describes the current relationship between cars and charging points. I
 | 6. Ranking and value estimate | done |
 | 7. Prototype: map, API and page | done |
 | 7a. Dockerfile for the API | done |
-| 7b. Outlook model and switchable map | planned |
+| 7b-1. Outlook model: data download, cleaning, tests | done |
+| 7b-2. Outlook model: exploration of the data (notebook 06, training years only) | next |
+| 7b-3. Outlook model: growth table, baselines, models and feature combinations | planned |
+| 7b-4. Outlook model: link to the gap model, switchable map with quality panel | planned |
 | 8. Presentation | planned |
 
 ## Key findings (summary for the presentation)
@@ -73,6 +76,7 @@ uv run python -m ev_gap.pipeline  # clean, join, write data/processed/districts.
 uv run python -m ev_gap.model     # cross validation of the models, write data/processed/gaps.csv
 uv run python -m ev_gap.ranking   # ranking and value estimate, write ranking.csv and value_scenarios.csv
 uv run python -m ev_gap.mapping   # interactive map reports/gap_map.html (works offline) and two pictures
+uv run python -m ev_gap.outlook_data   # tables for the outlook model: cars_by_year.csv and context.csv (needs the pipeline first)
 uv run uvicorn ev_gap.api:create_app --factory   # the web service, then open http://127.0.0.1:8000 (or /docs)
 uv run pytest                     # run the tests
 ```
@@ -111,6 +115,14 @@ Raw and processed data are not committed in either way.
 | Kraftfahrt-Bundesamt, table FZ 1.2 | Passenger cars per Zulassungsbezirk by fuel type, `Elektro (BEV)` and plug-in hybrid as separate columns. XLSX | 01.01.2026 | [KBA direct file](https://www.kba.de/SharedDocs/Downloads/DE/Statistik/Fahrzeuge/FZ1/fz1_2026.xlsx?__blob=publicationFile&v=2) |
 | Destatis, Kreisfreie Städte und Landkreise | Area, population (Zensus 2022 basis) and density per Kreis. XLSX | 31.12.2024 | [Destatis page](https://www.destatis.de/DE/Themen/Laender-Regionen/Regionales/Gemeindeverzeichnis/Administrativ/04-kreise.html) |
 
+For the outlook model (step 7b), three more sources are used. All three come with a licence that requires attribution (dl-de/by-2-0 for the Bundeswahlleiterin, the KBA terms for the KBA).
+
+| Source | Content | Reference date | Link |
+|---|---|---|---|
+| KBA, table FZ 1.2, earlier years | The same table as above for the car stock per Zulassungsbezirk on 1 January 2021, 2022, 2023, 2024 and 2025 | 01.01. of each year | [KBA statistics](https://www.kba.de/DE/Statistik/Fahrzeuge/Bestand/ZulassungsbezirkeGemeinden/zulassungsbezirke_node.html) |
+| Bundeswahlleiterin, structure data per Kreis | 46 indicators per Kreis: age, foreign share, housing, cars per resident, income, GDP, employment, benefits, unemployment, education | 2021 to 2023, depending on the variable | [Open data of the European election 2024](https://www.bundeswahlleiterin.de/europawahlen/2024/ergebnisse/opendata.html) |
+| Bundeswahlleiterin, European election 2024 | Vote counts per Kreis for all parties | 09.06.2024 | same page |
+
 A fourth file is used only to draw the map: a [TopoJSON file of the German districts](https://github.com/AliceWi/TopoJSON-Germany) (boundaries of 2017, built from GADM data, with a five digit key per district). It is downloaded by the script and not committed, because the GADM terms limit the use to non-commercial purposes. The repository's own licence statement was not checked.
 
 The three reference dates differ. Cars are about 10 months older than the charging points, and the population is almost 2 years older. This is a limitation of the analysis.
@@ -133,6 +145,7 @@ src/ev_gap/
   pipeline.py        run extract, transform and write data/processed/districts.csv
   model.py           baseline, linear model on logs, gradient boosting, cross validation, gaps
   ranking.py         ranking of the districts and the value estimate
+  outlook_data.py    tables for the outlook model: cars per district and year, context variables per district
   geometry.py        district shapes: decode the TopoJSON file, merge four old shapes
   mapping.py         interactive map (HTML, offline) and static pictures
   api.py             the web service (FastAPI)
@@ -156,6 +169,8 @@ tests/
   test_geometry.py   TopoJSON decoding, merged shapes, missing shapes
   test_mapping.py    map views, offline file, static picture
   test_api.py        endpoints, errors, input limits
+  test_outlook_data.py   German numbers, structure and election files, merges per year, leaking column
+  test_outlook_data_integration.py   the outlook tables from the real files, compared with published national figures
 ```
 
 ## Step log
@@ -410,6 +425,48 @@ The final model is the linear model on logs, fitted on all 399 districts and sav
 
 **Tests.** 32 new tests (79 in total): TopoJSON decoding (arcs, reversed arcs, closed rings, merges, missing shapes), the map (views, caps, offline file, picture) and the API (endpoints, errors, ranges). A smoke test with a started server returned the expected answers for health, a district, the what-if call, the map file and the page.
 
+### Step 7b-1: Data for the outlook model
+
+**To reproduce this step, run the pipeline first, then** `uv run python -m ev_gap.download` **and** `uv run python -m ev_gap.outlook_data`.
+
+Goal: get the data for a second model that predicts how fast the battery electric car stock grows in each district, and clean it with tests, like the data of the first model.
+
+**What was added to the download.** The KBA table FZ 1.2 for 1 January 2021 to 2025 (the 2026 file was already there), the structure data per Kreis and the results of the European election 2024 per Kreis, both from the Bundeswahlleiterin. KBA files before 2021 are not at the same address, so the series starts in 2021.
+
+**Result.** Two tables in `data/processed/`:
+- `cars_by_year.csv`: 399 districts times 6 years (2,394 rows), with all cars and cars by fuel type (petrol, diesel, gas, hybrid, plug-in hybrid, battery electric, other).
+- `context.csv`: 399 districts with 50 variables: 40 structure variables (age, foreign share, housing, cars per resident, income, GDP, businesses, employment by sector, benefits, unemployment, education, childcare) and 10 election variables (shares of Grüne, CDU and CSU, SPD, AfD, FDP, Linke, BSW, Freie Wähler, all others, and the turnout).
+
+**Battery electric cars in Germany by 1 January** (sum of the 399 districts, matches the KBA national total in each file):
+
+| Year | Battery electric cars | Change to the year before |
+|---|---|---|
+| 2021 | 308,745 | |
+| 2022 | 617,846 | +309,101 (+100%) |
+| 2023 | 1,011,996 | +394,150 (+64%) |
+| 2024 | 1,407,224 | +395,228 (+39%) |
+| 2025 | 1,649,725 | +242,501 (+17%) |
+| 2026 | 2,031,870 | +382,145 (+23%) |
+
+The growth was lower into 2025 and higher again into 2026. The reason is not in the data. This matters for the test design: the validation step (2024 to 2025) and the test step (2025 to 2026) have different national growth. The model should therefore be judged on how it distributes growth across districts, and the national level should be a separate scenario setting. This is to be decided in step 7b-2.
+
+**Data issues found and handled**
+1. **German number format.** The structure file writes 1,428.2 as `1.428,2`: a dot for thousands and a comma for decimals. A first attempt that only replaced the comma failed on 151 values in one column.
+2. **Missing values are marked with `–` or `.`.** They become missing values. Six variables have some: employees in agriculture (20 districts), in industry (10), in public and private services (8), in trade, hospitality and transport (2), vocational school leavers (5), and school leavers with university entrance qualification (2).
+3. **District keys differ by year.** Eisenach is a separate district only in 2021, and Hanau only in 2026 (in 2021 to 2025 the KBA lists no Hanau, so its cars are most likely counted in Main-Kinzig-Kreis, which is consistent with assumption A1). Eisenach is merged into Wartburgkreis, and Hanau into Main-Kinzig-Kreis, for all years. Each year then has the same 399 districts. The code stops with an error if a year has a missing or an unknown district, or if a merge changes a national total.
+4. **Trier and Trier-Saarburg** are one district in the KBA data and two in the election and structure files. Vote counts are added up and the shares are computed afterwards. Rates in the structure file are averaged with the population as weight (land use shares with the area). This is an approximation for this one pair (A17).
+5. **A column that would leak the target.** The structure file has the share of cars with electric or hybrid drive on 1 January 2023. That contains the result of the growth step 2022 to 2023, so it is not used. The car mix comes from the KBA tables.
+6. **The KBA reader now also checks the battery electric cars** against the national total in each file, not only the sum of all cars.
+7. **The structure columns are read by position.** The reader checks eight header words and stops with a clear message if the layout changed.
+
+**Checks against published figures.** The national party shares computed from the district counts are the published result of the European election 2024: Grüne 11.9%, CDU and CSU 30.0%, SPD 13.9%, AfD 15.9%, BSW 6.2%, FDP 5.2%, Linke 2.7%, turnout 64.7%. The area in the structure file adds up to 357,586 km2 and the population to 84.4 million. The districts with the highest Grüne share are Freiburg (30.2%), Münster (27.4%) and Heidelberg (26.8%), and with the highest AfD share Görlitz (40.1%), Sächsische Schweiz-Osterzgebirge and Bautzen. These values are plausible, but this is my own check against known figures, not an official one.
+
+**Tests.** 20 new tests (103 in total): German numbers, the structure and election files, vote counts and shares, merged rows, the leaking column, the keys of each year, and an integration test that builds both tables from the real files and compares the totals with the published figures. The Docker image was not rebuilt after this change. It only affects the build stage (more downloads and tests).
+
+**Limits to keep in mind.**
+- The context variables are treated as fixed characteristics of a district, but they are measured between 2021 and 2024. For the early growth steps (2022 and 2023) some of them are measured after the step started (A16).
+- The structure data has no year of its own for the car stock or for the electric share. The KBA tables are the only source for the car mix.
+
 ### Assumptions
 
 These are decisions made by the author. They are not confirmed by official documentation.
@@ -431,6 +488,8 @@ These are decisions made by the author. They are not confirmed by official docum
 | A13 | Energy per session: 10 / 15 / 20 kWh (normal) and 25 / 35 / 45 kWh (fast), low / base / high. Pure assumption. | value estimate |
 | A14 | Price: average ad hoc prices of July 2026, 52.3 ct per kWh (AC) and 70.5 ct (DC) ([ACE](https://www.ace.de/elektromobilitaet/laden-wallbox/ladepreise/), seen in a search summary). Drivers are assumed to pay 70%, 85% or 100% of it (low, base, high). The factors are pure assumptions. | value estimate |
 | A15 | For the map, the shapes of four old districts are merged into the districts of our data: Göttingen and Osterode into Göttingen (2016), Trier-Saarburg into Trier (as in A2), Eisenach into Wartburgkreis (2021, from my own knowledge, consistent with the Destatis list). The merged shapes are drawn side by side. | map |
+| A16 | The context variables of the outlook model (structure data from 2021 to 2023, election results of 9 June 2024) are treated as fixed characteristics of a district. For the early growth steps, some of them are measured after the step started. Slowly changing variables such as age or income make this small. | outlook model |
+| A17 | When Trier and Trier-Saarburg are merged in the structure file, rates are averaged with the population as weight and land use shares with the area. The true base of each rate is not in the file. | outlook model |
 
 ### Limitations known so far
 
@@ -455,9 +514,9 @@ These are decisions made by the author. They are not confirmed by official docum
 ## Planned next
 
 1. **Step 7b: outlook model and switchable map.** A second model, next to the unchanged gap model. It predicts how fast battery electric cars grow in each district, and the map gets a layer for it.
-   - **Data.** KBA car stock per district on 1 January of 2022, 2023, 2024, 2025 and 2026 (same table as now, earlier years, checked to be available). Context variables per district from the Bundeswahlleiterin: structural data (income, GDP, age groups, education, foreign share, housing, employment, unemployment, cars per resident) and the results of the European election 2024 per Kreis. Licence dl-de/by-2-0.
+   - **Data.** KBA car stock per district on 1 January of 2021 to 2026 (same table as now, earlier years). Context variables per district from the Bundeswahlleiterin: structural data (income, GDP, age groups, education, foreign share, housing, employment, unemployment, cars per resident) and the results of the European election 2024 per Kreis. Licence dl-de/by-2-0. Done in step 7b-1.
    - **Model.** Growth of the battery electric car stock from last year's growth, the current electric share and the context variables. A regularised linear model and gradient boosting.
-   - **Test.** By time: train on the growth until 1 January 2025, test on the growth into 2026. Baselines to beat: every district grows at the national rate, and every district repeats its own last growth. If the model does not beat them, the context variables add nothing, and this is reported.
+   - **Test.** By time, in three parts: train on the growth steps 2022 to 2023 and 2023 to 2024, choose and compare the feature combinations on 2024 to 2025 (validation), and keep 2025 to 2026 sealed until a final check of one pre-fixed combination. Exploration of the data uses the years up to 2025 only. Baselines to beat: every district grows at the national rate, and every district repeats its own last growth. If the model does not beat them, the context variables add nothing, and this is reported.
    - **Link to the gap model.** The predicted future car count goes into the unchanged gap model. The difference between the expected charging points then and now is the additional need if the relationship stays as it is. Horizon: one year.
    - **Switchable map (option A).** The outlook model is trained once for every combination of feature groups (for example voting, income and economy, age, education, foreign share, housing, car mix). The results are stored in a standalone HTML page, checkboxes select a combination, and the map recolours without a server. The page shows the quality of the selected combination next to the map (error on the test year, and the comparison with the baselines), and marks combinations that are not better than a baseline. This is meant to prevent picking the combination that gives the nicest story.
    - **Caveats to state.** Political variables are context variables, not causes. They are a sensitive basis for any decision about where to build. The growth rate changed between the years (purchase subsidy, from memory not checked), so a forecast from four years is uncertain. The model predicts the growth of the car stock, not buying intentions.
@@ -491,5 +550,6 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 
 - Step 7: the geometry, map and API modules, 32 tests, the page and the notebook `05_map_and_api.ipynb` were written by the assistant. The author asked for a map with switchable layers and an API like a taxi duration service, and later for a second model with switchable features. The assistant checked the available boundary files before planning. The first file it found (GADM based, 434 districts, no key) was unusable, and the second (TopoJSON, five digit key) matched 398 of 399 keys. A test fixture of the assistant was wrong (an open ring) and was fixed. A white spot in the points map was checked by drawing a labelled zoom: it is Bonn, correctly drawn inside the Rhein-Sieg-Kreis. The assistant could not open the interactive map in a browser, replaced the plotly map type that might fetch files from the internet by a tile-less one, and stated this as a manual check. Step 7b was designed with the author. The assistant proposed to show the model quality next to the switchable map, to prevent choosing the nicest combination, and the author accepted this. The author then opened the map file and the page of the running service in a browser.
 - Step 7a: the Dockerfile, the `.dockerignore`, the reference dates in `/health` and 4 new tests (83 in total) were written by the assistant. The author chose to build the data and the model inside the Docker build. The assistant noticed that the first image was 1.47 GB, which was more than its own estimate of 600 to 800 MB. It found that uv's download cache was left in the image, switched it off, and the image became 960 MB. The container was tested by starting it and calling the endpoints.
+- Step 7b-1: the download of the new files, the readers, the merge and context code, 20 tests and the checks above were written by the assistant, after the author agreed to the design of step 7b (second model, switchable map, sealed test year). The assistant first looked at the files and found the German number format, the missing marks, the changing district keys per year and the leaking column before writing code. A first version of the vote merge had a bug (an ambiguous name), which the first run found. A test failed because missing values were pandas' own `NA`, which was changed to plain NaN. The assistant checked the results against national figures that it knows (election result, area, population, BEV totals), and says that these are its own checks.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.

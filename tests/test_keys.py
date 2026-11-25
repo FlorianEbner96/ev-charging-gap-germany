@@ -48,3 +48,7 @@ def test_ambiguous_destatis_names_raise(destatis):
 def test_apply_merges():
     merged = apply_merges(pd.Series(["06415", "07235", "01001"]))
     assert merged.tolist() == ["06435", "07211", "01001"]
+
+
+def test_eisenach_of_the_year_2021_is_merged_into_wartburgkreis():
+    assert apply_merges(pd.Series(["16056", "16063"])).tolist() == ["16063", "16063"]
