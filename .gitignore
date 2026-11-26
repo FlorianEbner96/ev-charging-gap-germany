@@ -230,3 +230,6 @@ CLAUDE.local.md
 CLAUDE.md
 
 models/
+
+# The presentation is kept locally and sent separately
+reports/presentation/
