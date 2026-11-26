@@ -105,7 +105,7 @@ notebooks/
   01_explore_data.ipynb   exploration only, not part of the pipeline
   02_model.ipynb          model comparison, residuals, gaps (needs the pipeline output)
   03_phev_sensitivity.ipynb   does counting plug-in hybrids change the result (needs the pipeline output)
-  04_ranking_value.ipynb      ranked lists, value estimate (needs the pipeline and model output)
+  04_ranking_value.ipynb      ranked lists and the scale of the gap (needs the pipeline and model output)
   05_map_and_api.ipynb        maps of the gaps and examples of the API calls (needs the output of the steps above)
 tests/
   conftest.py        small made-up tables, one district per rule
@@ -200,7 +200,7 @@ Typical error = median of |expected minus actual| divided by actual, from 5-fold
 
 ### Step 6: Ranking and value estimate
 
-`uv run python -m ev_gap.ranking` or `notebooks/04_ranking_value.ipynb`.
+`uv run python -m ev_gap.ranking` (ranking and value estimate) or `notebooks/04_ranking_value.ipynb` (ranking only).
 
 - **Clearly below:** more than 30% fewer charging points than expected, which lies above the typical error of 21%. **Robust:** gradient boosting agrees. 55 of 399 districts are clearly below, 42 of them robust.
 - **Two views.** By percent, small districts lead: Kusel (-60%), Südwestpfalz (-58%), Germersheim (-54%), Wolfenbüttel (-52%), Altenkirchen (-50%). By missing points, large ones lead: München (1,817 missing, -37%), Rhein-Sieg-Kreis (476), Rhein-Neckar-Kreis (405), Euskirchen (363), Rhein-Erft-Kreis (355). Only 2 districts are in the top 15 of both lists.
