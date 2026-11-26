@@ -414,7 +414,16 @@ The final model is the linear model on logs, fitted on all 399 districts and sav
 
 The talk is 15 minutes in English. The slides (PowerPoint with speaker notes, and PDF) and the script that builds them are kept locally in `reports/presentation/` and are not part of this repository. The PDF is sent separately.
 
-**Structure** (15 main slides, about one minute each, and 3 appendix slides): title, the question, the approach in one picture, data and the join problem, the main insight, method, results, the state pattern, where the gaps are, value estimate, prototype, demo, limits and extensions, how AI tools were used, summary. The appendix has the data issues, the value assumptions with their sources, and the engineering.
+**Structure.** 18 main slides (about 14 minutes by the speaker notes) and 5 appendix slides. The main part follows the five parts the brief asks for, and each slide carries a small label with its part:
+1. Problem and business relevance: the problem, and who can act on the result
+2. Data and method: the data, the fair yardstick, the three models and their evaluation, then how the main model works (with an example)
+3. Results: the main insight, the model comparison, the state pattern, where the gaps are (map)
+4. Prototype: map, API and Docker, then the demo
+5. Business implications, limits and next steps: how to use the result with the value in short, then the limits and extensions
+
+The limits slide and the summary point out home charging: in rural districts many drivers may charge at home and use public points in the cities they commute to. A rural district below expected then does not automatically need more public points. This point came from a conversation with a friend of the author. It is not checked with data.
+
+Before part 1 come the title and an agenda, after part 5 the slide on AI tools and a summary. The appendix has the value estimate in detail, the join problem, the data issues, the value assumptions with their sources, and the engineering.
 
 **Where the content comes from.** Every number on the slides is taken from this README, the notebooks or a call of the running service (the demo slide). The model comparison and the state chart are native, editable charts. The scatter plot and the maps are pictures from the notebooks and from `reports/`.
 
@@ -450,7 +459,7 @@ These are decisions made by the author. They are not confirmed by official docum
 - Through traffic, tourism and commuters are not in the data.
 - The register lists only points whose notification process is complete, so it undercounts. This is stated by the Bundesnetzagentur.
 - Reference dates differ between the three sources.
-- Home and workplace charging is not in the data. Only public points are counted.
+- Home and workplace charging is not in the data. Only public points are counted. In rural districts many drivers may charge at home and use public points in the cities they commute to (not checked with data). A rural district below expected then does not automatically need more public points.
 - The typical model error is about 21%. Gaps of a few tens of percent are within noise.
 - The model does not know the federal state. State wide patterns (Saarland, Rheinland-Pfalz below, Hamburg, Berlin, Mecklenburg-Vorpommern above) are part of the gaps. Their causes are not in the data.
 - Neighbouring districts are similar. Evaluation by federal state tests this and gives slightly higher errors.
@@ -484,6 +493,7 @@ These are ideas for a larger version. None of them is part of the current code.
 - **Scheduled retraining with checks.** Retrain after each new release and compare with the previous model before it goes live.
 - **Monitoring.** New charging points appear every month, so the relationship between cars and charging points changes. Track the typical error and the distribution of the gaps over time.
 - **Better inputs.** Registration place is a weak stand-in for where cars charge. Commuter flows, traffic counts, or the location of each charging point would give a finer unit than the district. The register has coordinates, which are not used yet.
+- **Regions instead of single districts.** Count the charging points of neighbouring districts as well, for example for a rural district next to a large city whose drivers commute and charge there. This could be a second input (charging points within a set distance) or a gap computed for groups of districts.
 - **Service.** A build and test step on every change (CI), and the processed table in a database instead of a file.
 - **Live retraining (second option for the switchable map).** The checkboxes would call the API, which retrains the outlook model on the selected features and returns new predictions. A regularised linear model on about 400 districts should take milliseconds. It needs a running server, so the standalone page would be the base.
 
