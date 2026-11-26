@@ -22,7 +22,7 @@ The model describes the current relationship between cars and charging points. I
 | 7. Prototype: map, API and page | done |
 | 7a. Dockerfile for the API | done |
 | 7b. Outlook model and switchable map | not built, kept as a future plan (see "Extending the prototype") |
-| 8. Presentation | planned |
+| 8. Presentation | draft done (PowerPoint and PDF), the demo is to be added |
 
 ## Key findings (summary for the presentation)
 
@@ -139,6 +139,7 @@ src/ev_gap/
   web/index.html     the page with the map, a district lookup and the what-if form
 models/              the saved model for the API, not committed
 reports/             the map file and pictures for slides
+reports/presentation/   the slides (PowerPoint and PDF), the script that builds them, and one reused figure
 notebooks/
   01_explore_data.ipynb   exploration only, not part of the pipeline
   02_model.ipynb          model comparison, residuals, gaps (needs the pipeline output)
@@ -410,6 +411,22 @@ The final model is the linear model on logs, fitted on all 399 districts and sav
 
 **Tests.** 32 new tests (79 in total): TopoJSON decoding (arcs, reversed arcs, closed rings, merges, missing shapes), the map (views, caps, offline file, picture) and the API (endpoints, errors, ranges). A smoke test with a started server returned the expected answers for health, a district, the what-if call, the map file and the page.
 
+### Step 8: Presentation
+
+The talk is 15 minutes in English. The files are in `reports/presentation/`:
+- `ev_charging_gap.pptx`: the slides, editable, with speaker notes (suggested timing and the main sentences) for the 15 main slides
+- `ev_charging_gap.pdf`: the same slides as PDF (the PDF does not contain the speaker notes)
+- `build_deck.py`: the script that builds the slides, so they can be changed and rebuilt: `uv run --no-project --with python-pptx python reports/presentation/build_deck.py`. The PDF is made from the PowerPoint file with LibreOffice
+- `figures/`: the picture from the notebooks that the slides reuse (the plot of charging points against electric cars)
+
+**Structure** (15 main slides, about one minute each, and 3 appendix slides): title, the question, the approach in one picture, data and the join problem, the main insight, method, results, the state pattern, where the gaps are, value estimate, prototype, demo, limits and extensions, how AI tools were used, summary. The appendix has the data issues, the value assumptions with their sources, and the engineering.
+
+**Where the content comes from.** Every number on the slides is taken from this README, the notebooks or a call of the running service (the demo slide). The model comparison and the state chart are native, editable charts. The scatter plot and the maps are pictures from the notebooks and from `reports/`.
+
+**Checks.** The file passes a structural validation. All slides were rendered and looked at, and layout problems were fixed (text boxes with too much empty space, a chart that drew negative bars as positive ones in the renderer, a command that wrapped over two lines). The text contains no company name and no dashes used as punctuation.
+
+**To do.** The demo slide shows the steps and the real answers of the service. Screenshots or a screen recording of the map and the page are to be added. The slide on AI tools is a draft and has to be checked by the author.
+
 ### Assumptions
 
 These are decisions made by the author. They are not confirmed by official documentation.
@@ -454,8 +471,8 @@ These are decisions made by the author. They are not confirmed by official docum
 
 ## Planned next
 
-1. **Presentation.** 15 minutes, English.
-2. **Final check of the README.** The section on AI tools is to be completed by the author.
+1. **Demo for the presentation.** Add screenshots or a short screen recording of the map and the page to the demo slide.
+2. **Final check of the presentation and the README.** The section on AI tools is to be completed by the author.
 
 ## Extending the prototype (not built)
 
@@ -491,5 +508,6 @@ Claude Code (Anthropic) was used in this project as a coding assistant. Per step
 
 - Step 7: the geometry, map and API modules, 32 tests, the page and the notebook `05_map_and_api.ipynb` were written by the assistant. The author asked for a map with switchable layers and an API like a taxi duration service. The assistant checked the available boundary files before planning. The first file it found (GADM based, 434 districts, no key) was unusable, and the second (TopoJSON, five digit key) matched 398 of 399 keys. A test fixture of the assistant was wrong (an open ring) and was fixed. A white spot in the points map was checked by drawing a labelled zoom: it is Bonn, correctly drawn inside the Rhein-Sieg-Kreis. The assistant could not open the interactive map in a browser, replaced the plotly map type that might fetch files from the internet by a tile-less one, and stated this as a manual check. The author then opened the map file and the page of the running service in a browser. The author later asked for a second, outlook model with a switchable map (step 7b). It was designed together, and a first data step was built and tested. The author then decided, because of the time budget, not to build it. The data step was removed again, and the design is kept as a future plan under "Extending the prototype". In the design, the assistant proposed to show the model quality next to the switchable map and to choose combinations on a validation year, to prevent picking the nicest combination.
 - Step 7a: the Dockerfile, the `.dockerignore`, the reference dates in `/health` and 4 new tests (83 in total) were written by the assistant. The author chose to build the data and the model inside the Docker build. The assistant noticed that the first image was 1.47 GB, which was more than its own estimate of 600 to 800 MB. It found that uv's download cache was left in the image, switched it off, and the image became 960 MB. The container was tested by starting it and calling the endpoints.
+- Step 8: the slides and the script that builds them were written by the assistant, from the key findings and the step log of this README. The author asked for a PDF and a PowerPoint file. The assistant rendered all slides and looked at them, and fixed layout problems: too much empty space in several cards, a chart in which negative bars were drawn as positive ones by the renderer (found by testing small variants of the chart), and a command that wrapped over two lines. The text on the slide about AI tools was written by the assistant from this README and has to be checked by the author, because the assistant does not know what the author reviewed personally.
 
 The author is to complete this section: which results were reviewed or validated independently, and which decisions were taken by the author.
